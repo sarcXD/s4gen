@@ -1,7 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
-#define b32 int
+#define I8 int8_t
+#define I16 int16_t
+#define I32 int32_t
+#define I64 int64_t
+#define U8 uint8_t
+#define U16 uint16_t
+#define U32 uint32_t
+#define U64 uint64_t
+#define B8 U8
+#define B32 I32
+
 #define Kb(x) (1024*x)
 #define Mb(x) (1024*(Kb(x)))
 
@@ -18,15 +29,23 @@ int main(int argc, char **argv)
   char *dest = malloc(256);
 
   /**
-   * Md Mappings ordering:
-   * md tag, start, end
+   * Header Mappings ordering:
+   * Header tag, start, end
    */
-  char *MdMappings[][3] = {
-    {"# ", "<h1>", "</h1>"},
-    {"## ", "<h2>", "</h2>"},
-    {"### ", "<h3>", "</h3>"},
-    {"#### ", "<h4>", "</h4>"},
+  char *HeaderMappings[][2] = {
+    {"<h1>", "</h1>"}, // #
+    {"<h2>", "</h2>"}, // ##
+    {"<h3>", "</h3>"}, // ###
+    {"<h4>", "</h4>"}, // ####
   };
+
+  char *FormatMappings[][2] = {
+    {"<i>", "</i>"}, // *
+    {"<b>", "</b>"}, // **
+  };
+
+  char *UlMapping[3] = {"-", "<ul>", "</ul>"};
+  char *LiMapping[2] = {"<li>", "</li>"};
 
   while (*++argv != 0) 
   {
@@ -66,13 +85,104 @@ int main(int argc, char **argv)
   char *IndexStr = malloc(size);
   fread(IndexStr, 1, size, IndexFp);
   printf("the file:\n%s\n", IndexStr);
-  free(IndexStr);
 
   // translate the basic markdown to html
+  // ------------------------------------
+  // > read and convert buffer file line by line
+
+  long ScaledSize = size*1.5;
+  char *OutputStr = malloc(ScaledSize);
+  long OutputSz = 0;
+
+  char *CurrentChar = IndexStr;
+  char *OutputChar = OutputStr;
+
+  int s = 0;
+  int e = 1;
+
+  int FmtWrapperInd = 1;
+
+  int FmtIndex = -1;
+  int HeaderIndex = -1;
+  B8 ListWrapped = 0;
+
+  /*
+   * Ordering
+   * #
+   * ##
+   * ###
+   * ####
+   * ^ these all take an entire line
+   * *italic*
+   * **bold**
+   * - (an unsorted list)
+   * */
+  while (*CurrentChar != '\0')
+  {
+    if (*CurrentChar == '#')
+    {
+      // Headings Parser
+      ++HeaderIndex;
+      B8 StartedDec = 0;
+      while(*CurrentChar++ != '\n')
+      {
+        if (*CurrentChar == '#')
+        {
+          ++HeaderIndex;
+        }
+        else if (StartedDec == 0 && *CurrentChar == ' ')
+        {
+          OutputSz += QCopyStringMoveDest(HeaderMappings[HeaderIndex][s], &OutputChar);
+          StartedDec = 1;
+        }
+        else if (*CurrentChar == '\n')
+        {
+          OutputSz += QCopyStringMoveDest(HeaderMappings[HeaderIndex][e], &OutputChar);
+          HeaderIndex = -1;
+
+          *OutputChar++ = *CurrentChar;
+        }
+        else 
+        {
+          *OutputChar++ = *CurrentChar;
+          ++OutputSz;
+        }
+      };
+    }
+    else if (*CurrentChar == '*')
+    {
+      ++FmtIndex;
+      ++CurrentChar;
+    }
+    else if ( FmtIndex > -1 && *CurrentChar != '*')
+    {
+      OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][FmtWrapperInd], &OutputChar);
+      FmtIndex = -1;
+      FmtWrapperInd = FmtWrapperInd == 1 ? 2 : 1;
+    }
+    //else if (HeaderValIndex < 0 && HeaderIndex < 0 && FmtIndex < 0 && *CurrentChar == '-')
+    //{
+    //  if (ListWrapped == 0)
+    //  {
+    //    OutputSz += QCopyStringMoveDest(UlMapping[s], &OutputChar);
+    //    ListWrapped = 1;
+    //  }
+    //}
+    else 
+    {
+      *OutputChar++ = *CurrentChar;
+      ++OutputSz;
+      ++CurrentChar;
+    }
+  }
 
   // write translated file to dest folder
+  FILE *WriteFp = fopen("./index.html", "w");
+  fwrite(OutputStr, 1, OutputSz, WriteFp);
 
   // cleanup
+  free(OutputStr);
+  free(IndexStr);
   free(dest);
   free(src);
   return 1;

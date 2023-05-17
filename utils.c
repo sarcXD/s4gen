@@ -1,4 +1,4 @@
-void QInsertChars(char* InsertSource, char* InsertDest, b32 AddNull) {
+void QInsertChars(char* InsertSource, char* InsertDest, B32 AddNull) {
     // NOTE(talha): insert characters at source pointer location
     while (*InsertSource != '\0') {
         *InsertDest++ = *InsertSource++;
@@ -12,7 +12,7 @@ void QCopyUntilString(const char* CopySource, char **CopyDest, char* ToFind)
     char *copy = *CopyDest;
     const char *i = CopySource;
     char *t = ToFind; 
-    b32 found = 0;
+    B32 found = 0;
     while(*i != '\0' && !found) { 
         *copy++ = *i;
         while(*i++ == *t) {
@@ -36,7 +36,21 @@ void QCopyString(char *CopySource, char **CopyDest)
     }
 }
 
-b32 QStrEqual(char *a, char *b)
+// returns bytes written
+int QCopyStringMoveDest(char *CopySource, char **CopyDest)
+{
+    int BytesWritten = 0;
+    char *DestPtr = *CopyDest;
+    while (*CopySource != 0)
+    {
+        *DestPtr++ = *CopySource++;
+        ++BytesWritten;
+    }
+    *CopyDest = DestPtr;
+    return BytesWritten;
+}
+
+B32 QStrEqual(char *a, char *b)
 {
   while (*a == *b && *a != 0 && *b != 0)
   {
