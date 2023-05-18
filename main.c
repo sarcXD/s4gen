@@ -40,11 +40,12 @@ int main(int argc, char **argv)
   };
 
   char *FormatMappings[][2] = {
-    {"<i>", "</i>"}, // *
-    {"<b>", "</b>"}, // **
+    {"<em>", "</em>"},                  // *
+    {"<strong>", "</strong>"},          // **
+    {"<em><strong>", "</strong></em>"}  // ***
   };
 
-  char *UlMapping[3] = {"-", "<ul>", "</ul>"};
+  char *UlMapping[2] = {"<ul>", "</ul>"};
   char *LiMapping[2] = {"<li>", "</li>"};
 
   while (*++argv != 0) 
@@ -104,8 +105,10 @@ int main(int argc, char **argv)
 
   int FmtIndex = -1;
   int HeaderIndex = -1;
-  B8 ListWrapped = 0;
-
+  B8 UlStarted = 0;
+  B8 LiStarted = 0;
+  B8 FmtStarted = 0;
+  B8 InlineCodeStarted = 0;
   /*
    * Ordering
    * #
@@ -141,6 +144,7 @@ int main(int argc, char **argv)
           HeaderIndex = -1;
 
           *OutputChar++ = *CurrentChar;
+          ++OutputSz;
         }
         else 
         {
@@ -149,30 +153,91 @@ int main(int argc, char **argv)
         }
       };
     }
+    // link handling
+    // else if (*CurrentChar == '[')
+    // {
+    //   // link handling
+    //   *TmpBuffer++ = *CurrentChar++;
+    //   while (1)
+    //   {
+    //     if (*CurrentChar
+    //   }
+    // }
+    else if (*CurrentChar == ' ' && *(CurrentChar+1) == ' ')
+    {
+      // if there are two space found
+      // add a break tag
+      OutputSz += QCopyStringMoveDest("<br>", &OutputChar);
+      CurrentChar+=2;
+    }
+    else if (*CurrentChar == '-' && *(CurrentChar+1) == ' ')
+    {
+      if (UlStarted == 0)
+      {
+        OutputSz += QCopyStringMoveDest(UlMapping[0], &OutputChar);
+        UlStarted = 1;
+      }
+      OutputSz += QCopyStringMoveDest(LiMapping[0], &OutputChar);
+      CurrentChar += 2;
+      LiStarted = 1;
+    }
+    else if (*CurrentChar == '`')
+    {
+      if (InlineCodeStarted == 0)
+      {
+        OutputSz += QCopyStringMoveDest("<code>", &OutputChar);
+        InlineCodeStarted = 1;
+      }
+      else
+      {
+        OutputSz += QCopyStringMoveDest("</code>", &OutputChar);
+        InlineCodeStarted = 0;
+      }
+      ++CurrentChar;
+    }
     else if (*CurrentChar == '*')
     {
       ++FmtIndex;
       ++CurrentChar;
     }
-    else if ( FmtIndex > -1 && *CurrentChar != '*')
+    else if (FmtIndex > -1 && *CurrentChar != '*')
     {
-      OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][FmtWrapperInd], &OutputChar);
+      // reach non star character
+      // add starting tag corresponding to format specifier
+      if (FmtStarted == 0)
+      {
+        OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][0], &OutputChar);
+        FmtStarted = 1;
+      }
+      else
+      {
+        OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][1], &OutputChar);
+        FmtStarted = 0;
+      }
       FmtIndex = -1;
-      FmtWrapperInd = FmtWrapperInd == 1 ? 2 : 1;
     }
-    //else if (HeaderValIndex < 0 && HeaderIndex < 0 && FmtIndex < 0 && *CurrentChar == '-')
-    //{
-    //  if (ListWrapped == 0)
-    //  {
-    //    OutputSz += QCopyStringMoveDest(UlMapping[s], &OutputChar);
-    //    ListWrapped = 1;
-    //  }
-    //}
+    else if (*CurrentChar == '\n')
+    {
+      if (LiStarted == 1)
+      {
+        // closes a list element
+        OutputSz += QCopyStringMoveDest(LiMapping[1], &OutputChar);
+        LiStarted = 0;
+      }
+      else if (UlStarted == 1)
+      {
+        // in the case a list element was closen with \n
+        // having this will close the list
+        OutputSz += QCopyStringMoveDest(UlMapping[1], &OutputChar);
+        UlStarted = 0;
+      }
+      *OutputChar++ = *CurrentChar++;
+      ++OutputSz;
+    }
     else 
     {
-      *OutputChar++ = *CurrentChar;
+      *OutputChar++ = *CurrentChar++;
       ++OutputSz;
-      ++CurrentChar;
     }
   }
 

@@ -5,8 +5,16 @@
 this is a normal paragraph 
 this will be *italic* 
 this will be **BOLD** 
+this will be ***italic bold***
 this is a list:
-- list ele 1
+- list ele 1  spaced list should break??
 - list ele 2
+- list with *italic*
+- list with **bold**
+- list with `code`
 
-lol only supporting unordered lists for now
+im making this with  two spaces  the above sentence should be broken and be in
+the middle
+lol only supporting unordered lists for now `y=mx+c` 
+
+[custom name](url_here)
