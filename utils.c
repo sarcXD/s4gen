@@ -27,16 +27,23 @@ void QCopyUntilString(const char* CopySource, char **CopyDest, char* ToFind)
     *CopyDest = copy;
 }
 
-void QCopyString(char *CopySource, char **CopyDest)
+int QCopyString(char *CopySource, char **CopyDest)
 {
     char *DestPtr = *CopyDest;
+    int BytesWritten = 0;
     while (*CopySource != 0)
     {
         *DestPtr++ = *CopySource++;
+        ++BytesWritten;
     }
+    return BytesWritten;
 }
 
-// returns bytes written
+// @description:
+// copy source to dest
+// move dest ptr so that it is 1 byte after the copied source
+// @returns:
+// bytes written
 int QCopyStringMoveDest(char *CopySource, char **CopyDest)
 {
     int BytesWritten = 0;
@@ -58,4 +65,33 @@ B32 QStrEqual(char *a, char *b)
     ++b;
   };
   return *a == *b;
+}
+
+B32 QFindSubStr(char *pattern, char *src)
+{
+  char *srcPtr = src;
+  char *patternPtr = pattern;
+  B8 found = 0;
+  while (*srcPtr != 0 && found == 0)
+  {
+    if (*srcPtr == *patternPtr)
+    {
+      while (*srcPtr != *patternPtr && *srcPtr != 0 && *patternPtr != 0)
+      {
+        ++srcPtr;
+        ++patternPtr;
+      }
+      if (*patternPtr == 0)
+      {
+        found = 1;
+      }
+      patternPtr = pattern;
+      break;
+    }
+    else
+    {
+      ++srcPtr;
+    }
+  }
+  return found;
 }
