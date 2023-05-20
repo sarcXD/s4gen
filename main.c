@@ -26,6 +26,10 @@
 #define H3Index 2
 #define H4Index 3
 
+// @todo: 
+// creating folders and writing files recursively
+// need to handle paragraphing
+
 typedef struct GlobalState{
   char *Src;
   char *Dest;
@@ -332,7 +336,6 @@ void ReadDirectoryRecursively(char *DirPath, GlobalState *state)
           }
         }
         OutputSz += QCopyStringMoveDest("</article>\n</body>\n</html>", &OutputChar);
-        long OutLen = strlen(OutputStr);
         closedir(DirPointer);
         // write translated file to dest folder
         // @fix
