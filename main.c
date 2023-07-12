@@ -28,14 +28,21 @@
 #define H3Index 2
 #define H4Index 3
 
-/**
+/*
  * comment keywords ref:
- * @todo: todo
+ * @todo: things to do
+ * @note: a general note
+ * @done: tasks done
+ */
+
+/*
+ * @done:
+ * - inline and multiline codes
+ * - fixed heading
  */
 
 // @todo: 
-// fix InlineCodeStarted conditions - possibly handle the code in a loop within the main loop
-// right now im adding a condition to each tag to check if the codeblock is on and that is stupid
+// make multiline code show as its own block with new lines and whatnot
 // need to handle paragraphs
 
 typedef struct GlobalState{
@@ -451,9 +458,18 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
 
               if (IsValid)
               {
-                OutputSz += QCopyStringMoveDest("<code>", &OutputChar);
-                OutputSz += QCopyStringMoveDest(LookAheadBuffer, &OutputChar);
-                OutputSz += QCopyStringMoveDest("</code>", &OutputChar);
+                if (IsMultiline)
+                {
+                  OutputSz += QCopyStringMoveDest("<div class=\"multiline\">", &OutputChar);
+                  OutputSz += QCopyStringMoveDest(LookAheadBuffer, &OutputChar);
+                  OutputSz += QCopyStringMoveDest("</div>", &OutputChar);
+                }
+                else
+                {
+                  OutputSz += QCopyStringMoveDest("<code>", &OutputChar);
+                  OutputSz += QCopyStringMoveDest(LookAheadBuffer, &OutputChar);
+                  OutputSz += QCopyStringMoveDest("</code>", &OutputChar);
+                }
               }
               else
               {
