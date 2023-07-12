@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <dirent.h>
 
 #define I8 int8_t
@@ -16,8 +17,9 @@
 #define B8 U8
 #define B32 I32
 
-#define Kb(x) (1024*x)
-#define Mb(x) (1024*(Kb(x)))
+#define B(x) ((x))
+#define KB(x) (1024*(B(x)))
+#define MB(x) (1024*(KB(x)))
 
 #include "utils.c"
 
@@ -26,9 +28,15 @@
 #define H3Index 2
 #define H4Index 3
 
+/**
+ * comment keywords ref:
+ * @todo: todo
+ */
+
 // @todo: 
-// creating folders and writing files recursively
-// need to handle paragraphing
+// fix InlineCodeStarted conditions - possibly handle the code in a loop within the main loop
+// right now im adding a condition to each tag to check if the codeblock is on and that is stupid
+// need to handle paragraphs
 
 typedef struct GlobalState{
   char *Src;
@@ -37,337 +45,497 @@ typedef struct GlobalState{
   char *NavBarComp;
 } GlobalState;
 
-void ReadDirectoryRecursively(char *DirPath, GlobalState *state)
+void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
 {
   /**
    * for a basic v1
    * I will only focus on markdown parsing
    */
-  DIR *DirPointer = opendir(DirPath);
+  DIR *DirPointer = opendir(SrcDir);
   if (DirPointer != NULL)
   {
+
+    struct stat st = {0};
+    if (stat(DestDir, &st) == -1)
+    {
+      mkdir(DestDir, 0700);
+    }
     struct dirent *FilePointer;
     do {
       FilePointer = readdir(DirPointer);
+      if (FilePointer == NULL) {
+        break;
+      }
       if (*FilePointer->d_name == '.')
       {
+        /* @note: this is supposed to handle special folders
+         * .
+         * ..
+         * .somename
+         * I will be ignoring those and not going into them
+         * This is good for me since those are usually some internal structures
+         * that should not be used in static files
+        */
         continue;
       }
       if (FilePointer->d_type == DT_REG)
       {
         // IF FILE:
         // if FilePointer.d_name has .md: parse
-        char *FilePath = malloc(256);
+        char *FilePath = malloc(KB(4));
         char *_file_path_ptr = FilePath;
-        QCopyStringMoveDest(DirPath, &_file_path_ptr);
-        QCopyString(FilePointer->d_name, &_file_path_ptr);
+        QCopyStringMoveDest(SrcDir, &_file_path_ptr);
+        QCopyStringMoveDest(FilePointer->d_name, &_file_path_ptr);
+        *_file_path_ptr = 0;
 
-        FILE *IndexFp = fopen(FilePath, "r");
-        fseek(IndexFp, 0, SEEK_END );
-        long size = ftell(IndexFp);
-        fseek(IndexFp, 0, SEEK_SET );
-
-        char *IndexStr = malloc(size);
-        fread(IndexStr, 1, size, IndexFp);
-
-        // translate the basic markdown to html
-        // ------------------------------------
-        // > read and convert buffer file line by line
-
-        long ScaledSize = size*2;
-        char *OutputStr = malloc(ScaledSize);
-        long OutputSz = 0;
-
-        char *CurrentChar = IndexStr;
-        char *OutputChar = OutputStr;
-
-        int s = 0;
-        int e = 1;
-
-        int FmtWrapperInd = 1;
-
-        int FmtIndex = -1;
-        int HeaderIndex = -1;
-        B8 UlStarted = 0;
-        B8 LiStarted = 0;
-        B8 FmtStarted = 0;
-        B8 InlineCodeStarted = 0;
-        /**
-         * Header Mappings ordering:
-         * Header tag, start, end
-         */
-        char *HeaderMappings[4][2] = {
-          {"<h1>", "</h1>"}, // #
-          {"<h2>", "</h2>"}, // ##
-          {"<h3>", "</h3>"}, // ###
-          {"<h4>", "</h4>"}, // ####
-        };
-
-        char *FormatMappings[3][2] = {
-          {"<em>", "</em>"},                  // *
-          {"<strong>", "</strong>"},          // **
-          {"<em><strong>", "</strong></em>"}  // ***
-        };
-
-        char *UlMapping[2] = {"<ul>", "</ul>"};
-        char *LiMapping[2] = {"<li>", "</li>"};
-
-        /*
-         * Ordering
-         * #
-         * ##
-         * ###
-         * ####
-         * ^ these all take an entire line
-         * *italic*
-         * **bold**
-         * - (an unsorted list)
-         * */
-        // Copy over the html header tag
-        // see: HeaderTag
-        OutputSz += QCopyStringMoveDest(state->HeaderTag, &OutputChar);
-        // Copy over the custom navbar component
-        // see: NavBarComp
-        OutputSz += QCopyStringMoveDest(state->NavBarComp, &OutputChar);
-
-        OutputSz += QCopyStringMoveDest("<body>", &OutputChar);
-        OutputSz += QCopyStringMoveDest("<article class=\"article-ctn\">", &OutputChar);
-        while (*CurrentChar != '\0')
+        B8 IsMd = QFindSubStr(".md", &FilePath);
+        if (!IsMd)
         {
-          if (*CurrentChar == '#')
-          {
-            // Headings Parser
-            ++HeaderIndex;
-            B8 StartedDec = 0;
-            while(*CurrentChar++ != '\n')
-            {
-              if (*CurrentChar == '#')
-              {
-                ++HeaderIndex;
-              }
-              else if (StartedDec == 0 && *CurrentChar == ' ')
-              {
-                OutputSz += QCopyStringMoveDest(HeaderMappings[HeaderIndex][s], &OutputChar);
-                StartedDec = 1;
-              }
-              else if (*CurrentChar == '\n')
-              {
-                OutputSz += QCopyStringMoveDest(HeaderMappings[HeaderIndex][e], &OutputChar);
-                HeaderIndex = -1;
+          // @note: file is not md, so we just read and copy it to dest
+          FILE *IndexFp = fopen(FilePath, "rb");
+          fseek(IndexFp, 0, SEEK_END );
+          long size = ftell(IndexFp);
+          fseek(IndexFp, 0, SEEK_SET );
 
-                *OutputChar++ = *CurrentChar;
-                ++OutputSz;
-              }
-              else 
-              {
-                *OutputChar++ = *CurrentChar;
-                ++OutputSz;
-              }
-            };
+          char *IndexStr = calloc(1, MB(50));
+          fread(IndexStr, 1, size, IndexFp);
+
+          // translate the basic markdown to html
+          // ------------------------------------
+          // > read and convert buffer file line by line
+          char *OutputStr = calloc(1, MB(50));
+
+          char *CurrentChar = IndexStr;
+          char *OutputChar = OutputStr;
+          // need to copy all bytes till size
+          I32 i = 0;
+          while (i++ < size)
+          {
+            *OutputChar++ = *CurrentChar++;
           }
-          // link handling
-          else if (*CurrentChar == '[')
-          {
-            // search ahead until a \n, and see if user wanted a valid link 
-            char *LookAhead = CurrentChar + 1;
-            B8 SquareClosed = 0;
-            B8 IsValidLink = 0;
-            // html format to convert to
-            // <a href="${link_url}">link text</a>
-            char *LinkBlock = malloc(sizeof(char)*2048);
-            char *LinkText = LinkBlock;
-            I32 TextSz = 0;
-            char *LinkUrl = LinkBlock + 1024;
-            I32 UrlSz = 0;
+          // write translated file to dest folder
+          I32 OutputFpLen = 0;
+          char *OutputFilePath = malloc(KB(4));
+          OutputFpLen += AppendToPath(&OutputFilePath, DestDir, FilePointer->d_name, 0);
+          FILE *WriteFp = fopen(OutputFilePath, "wb");
+          size_t StuffWritten = fwrite(OutputStr, 1, size, WriteFp);
 
-            while (1) {
-              if (*LookAhead == '\n')
+          fclose(WriteFp);
+          fclose(IndexFp);
+          // cleanup
+          free(OutputFilePath);
+          free(OutputStr);
+          free(IndexStr);
+          free(FilePath);
+        }
+        else
+        {
+          FILE *IndexFp = fopen(FilePath, "r");
+          fseek(IndexFp, 0, SEEK_END );
+          long size = ftell(IndexFp);
+          fseek(IndexFp, 0, SEEK_SET );
+
+          char *IndexStr = calloc(1, MB(1));
+          fread(IndexStr, 1, size, IndexFp);
+
+          char *OutputStr = calloc(1, MB(1));
+          long OutputSz = 0;
+
+          char *CurrentChar = IndexStr;
+          char *OutputChar = OutputStr;
+
+          int FmtWrapperInd = 1;
+
+          int FmtIndex = -1;
+          int HeaderIndex = -1;
+          B8 UlStarted = 0;
+          B8 LiStarted = 0;
+          B8 FmtStarted = 0;
+          /* @note
+           * HeaderMappings, FormatMappings, are arranged in an order
+           * this is simple, there is an incremental order, which makes
+           * sense to treat them as an array and just have the mappings set
+           */
+
+          /**
+           * Header Mappings ordering:
+           * Header tag, start, end
+           */
+          char *HeaderMappings[4][2] = {
+            {"<h1>", "</h1>"}, // #
+            {"<h2>", "</h2>"}, // ##
+            {"<h3>", "</h3>"}, // ###
+            {"<h4>", "</h4>"}, // ####
+          };
+
+          char *FormatMappings[3][2] = {
+            {"<em>", "</em>"},                  // *
+            {"<strong>", "</strong>"},          // **
+            {"<em><strong>", "</strong></em>"}  // ***
+          };
+
+          char *UlMapping[2] = {"<ul>", "</ul>"};
+          char *LiMapping[2] = {"<li>", "</li>"};
+
+          /*
+           * Ordering
+           * #
+           * ##
+           * ###
+           * ####
+           * ^ these all take an entire line
+           * *italic*
+           * **bold**
+           * - (an unsorted list)
+           * */
+          // Copy over the html header tag
+          // see: HeaderTag
+          OutputSz += QCopyStringMoveDest(state->HeaderTag, &OutputChar);
+          // Copy over the custom navbar component
+          // see: NavBarComp
+          OutputSz += QCopyStringMoveDest(state->NavBarComp, &OutputChar);
+
+          OutputSz += QCopyStringMoveDest("<body>", &OutputChar);
+          OutputSz += QCopyStringMoveDest("<article class=\"article-ctn\">", &OutputChar);
+          while (*CurrentChar != 0)
+          {
+            if (*CurrentChar == '#')
+            {
+              // @note: Parse Headings, independant
+              B8 IsValidHeading = 1;
+              ++HeaderIndex;
+              B8 StartedDec = 0;
+              while(*CurrentChar++ != '\n')
               {
-                break;
-              }
-              else if (*LookAhead == ']')
-              {
-                if (*(LookAhead+1) == '(')
+                if (IsValidHeading)
                 {
-                  SquareClosed = 1;
-                  LookAhead += 2;
-                  continue;
+                  if (*CurrentChar == '#')
+                  {
+                    ++HeaderIndex;
+                  }
+                  else if (StartedDec == 0 && *CurrentChar == ' ')
+                  {
+                    OutputSz += QCopyStringMoveDest(HeaderMappings[HeaderIndex][0], &OutputChar);
+                    StartedDec = 1;
+                  }
+                  else if (*CurrentChar == '\n')
+                  {
+                    OutputSz += QCopyStringMoveDest(HeaderMappings[HeaderIndex][1], &OutputChar);
+                    HeaderIndex = -1;
+
+                    *OutputChar++ = *CurrentChar;
+                    ++OutputSz;
+                  }
+                  else if (StartedDec == 0)
+                  {
+                    // once we enter this loop, it will prevent reaching here for that line
+                    // none of the re-assignment will be repeated
+                    // you'd have to corrupt my memory for that to happen, so maybe in a rare solar event
+                    IsValidHeading = 0;
+                    *OutputChar++ = *CurrentChar;
+                    ++OutputSz;
+                  }
                 }
                 else
                 {
+                  // it was not a valid heading, we've been duped
+                  // just copy it as usual
+                  *OutputChar++ = *CurrentChar;
+                  ++OutputSz;
+                }
+              };
+            }
+            // link handling
+            else if (*CurrentChar == '[')
+            {
+              // search ahead until a \n, and see if user wanted a valid link 
+              char *LookAhead = CurrentChar + 1;
+              B8 SquareClosed = 0;
+              B8 IsValidLink = 0;
+              // html format to convert to
+              // <a href="${link_url}">link text</a>
+              char *LinkBlock = calloc(2, MB(1));
+              char *LinkText = LinkBlock;
+              I32 TextSz = 0;
+              // program will only allow link text to be 1024 bytes OR 1024 characters
+              // not the same as word limit, I don't care about that, nor will I implement that
+              // I can just increase memory if that ever happens
+              char *LinkUrl = LinkBlock + 1024;
+              I32 UrlSz = 0;
+              while (1) {
+                if (*LookAhead == '\n')
+                {
                   break;
                 }
-              }
-              else if (SquareClosed)
-              {
-                if (*LookAhead == ')')
+                else if (*LookAhead == ']')
                 {
-                  IsValidLink = 1;
+                  // OKAY, so the square bracket closes
+                  if (*(LookAhead+1) == '(')
+                  {
+                    // Great, we also have a `(`
+                    SquareClosed = 1;
+                    LookAhead += 2;
+                    continue;
+                  }
+                  else
+                  {
+                    // not a valid link
+                    break;
+                  }
+                }
+                else if (SquareClosed)
+                {
+                  // if the square bracket -> [] followed by ( part is good we check if the ) bracket comes
+                  if (*LookAhead == ')')
+                  {
+                    // it comes, link is actually valid and we can convert it to html link, huzzah!
+                    IsValidLink = 1;
+                    ++LookAhead;
+                    break;
+                  }
+                  else if (*LookAhead == ' ')
+                  {
+                    // any space in the () is invalid and we break it
+                    break;
+                  }
+                  // now there is no else, because there is another if condition below to deal with char copy
+                }
+                if (SquareClosed == 0)
+                {
+                  // we are still [ in this part ...] of the link, squares still not closed
+                  if (TextSz < 1023)
+                  {
+                    // text size below 1023, so we will keep going and copy chars
+                    // IF NOT: we don't get inside here and just truncate the text
+                    *LinkText++ = *LookAhead;
+                    ++TextSz;
+                  }
                   ++LookAhead;
-                  break;
                 }
-                else if (*LookAhead == ' ')
+                else
                 {
-                  break;
+                  // we are [not here](in this part ...) of the link
+                  if (UrlSz < 1023)
+                  {
+                    // text size below 1023, so we will keep going and copy chars
+                    // IF NOT: we don't get inside here and just truncate the text
+                    *LinkUrl++ = *LookAhead;
+                    ++UrlSz;
+                  }
+                  ++LookAhead;
                 }
               }
-              if (SquareClosed == 0)
+              if (IsValidLink)
               {
-                if (TextSz < 1023)
-                {
-                  *LinkText++ = *LookAhead;
-                  ++TextSz;
-                }
-                ++LookAhead;
+                // =========== parse: <a href="${link_url}"> ===========
+                int BytesWritten = 0;
+                BytesWritten = QCopyStringMoveDest("<a href=\"", &OutputChar);
+                OutputSz += BytesWritten;
+                char *TextOffset = LinkBlock;
+                char *UrlOffset = LinkBlock + 1024;
+                BytesWritten = QCopyStringMoveDest(UrlOffset, &OutputChar);
+                OutputSz += BytesWritten;
+                *OutputChar++ += '"'; 
+                *OutputChar++ += '>';
+                OutputSz += 2;
+                // =========== parse: link text</a> ==================
+                BytesWritten = QCopyStringMoveDest(TextOffset, &OutputChar);
+                OutputSz += BytesWritten;
+                BytesWritten = QCopyStringMoveDest("</a>", &OutputChar);
+                OutputSz += BytesWritten;
+                // Move Ptr to LookAhead since its done reading the link
+                CurrentChar = LookAhead;
               }
               else
               {
-                if (UrlSz < 1023)
-                {
-                  *LinkUrl++ = *LookAhead;
-                  ++UrlSz;
-                }
-                ++LookAhead;
+                // incase link is not valid
+                // move the pointer ahead since I just read the original `[`
+                // that got me in this condition
+                *OutputChar++ = *CurrentChar++;
+                ++OutputSz;
               }
+              free(LinkBlock);
             }
-            if (IsValidLink)
+            else if (*CurrentChar == ' ' && *(CurrentChar+1) == ' ')
             {
-              // =========== parse: <a href="${link_url}"> ===========
-              int BytesWritten = 0;
-              BytesWritten = QCopyStringMoveDest("<a href=\"", &OutputChar);
-              OutputSz += BytesWritten;
-              char *TextOffset = LinkBlock;
-              char *UrlOffset = LinkBlock + 1024;
-              BytesWritten = QCopyStringMoveDest(UrlOffset, &OutputChar);
-              OutputSz += BytesWritten;
-              *OutputChar++ += '"'; 
-              *OutputChar++ += '>';
-              OutputSz += 2;
-              // =========== parse: link text</a> ==================
-              BytesWritten = QCopyStringMoveDest(TextOffset, &OutputChar);
-              OutputSz += BytesWritten;
-              BytesWritten = QCopyStringMoveDest("</a>", &OutputChar);
-              OutputSz += BytesWritten;
-              // Move Ptr
-              CurrentChar = LookAhead;
+              // if there are two space found
+              // add a break tag
+              OutputSz += QCopyStringMoveDest("<br>", &OutputChar);
+              CurrentChar+=2;
             }
-            else
+            else if (*(CurrentChar-1) == '\n' && *CurrentChar == '-' && *(CurrentChar+1) == ' ')
+            {
+              if (UlStarted == 0)
+              {
+                OutputSz += QCopyStringMoveDest(UlMapping[0], &OutputChar);
+                UlStarted = 1;
+              }
+              OutputSz += QCopyStringMoveDest(LiMapping[0], &OutputChar);
+              CurrentChar += 2;
+              LiStarted = 1;
+            }
+            else if (*CurrentChar == '*')
+            {
+              // @todo: I dont know why I am just doing everything top level, since that is a horrible idea now that I see it.
+              // I need to move the evaluation for this as well as the code copying inside here, in another loop
+              ++FmtIndex;
+              ++CurrentChar;
+            }
+            else if (FmtIndex > -1 && *CurrentChar != '*')
+            {
+              // @todo: move stuff in the CurrentChar condition
+              // reach non star character
+              // add starting tag corresponding to format specifier
+              if (FmtStarted == 0)
+              {
+                OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][0], &OutputChar);
+                FmtStarted = 1;
+              }
+              else
+              {
+                OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][1], &OutputChar);
+                FmtStarted = 0;
+              }
+              FmtIndex = -1;
+            }
+            else if (*CurrentChar == '`')
+            {
+              B8 IsValid = 0;
+              B8 IsMultiline = 0;
+
+              char *LookAhead = CurrentChar;
+              char *LookAheadBuffer = calloc(1, MB(1));
+              char *BuffPtr = LookAheadBuffer;
+              I32 BuffSz = 0;
+
+              // check if this is multi-line or inline
+              if (*(LookAhead+1) == '`' && *(LookAhead+2) == '`')
+              {
+                IsMultiline = 1;
+                LookAhead += 3; // move LookAhead after ```
+              }
+              else
+              {
+                ++LookAhead; // move LookAhead after `
+              }
+
+              // now check if until the file ends (yes I know), whether the code block ends, cause if it does not its not valid
+              if (IsMultiline)
+              {
+                while (*(LookAhead+2) != 0)
+                {
+                  if (*LookAhead == '`' && *(LookAhead+1) == '`' && *(LookAhead+2) == '`')
+                  {
+                    IsValid = 1;
+                    LookAhead += 3; // move LookAhead after the ```
+                    break;
+                  }
+                  *BuffPtr++ = *LookAhead++;
+                  ++BuffSz;
+                }
+              }
+              else
+              {
+                while (*LookAhead != '\n' && *LookAhead != 0)
+                {
+                  if (*LookAhead == '`')
+                  {
+                    IsValid = 1;
+                    ++LookAhead; // move LookAhead after `
+                    break;
+                  }
+                  *BuffPtr++ = *LookAhead++;
+                  ++BuffSz;
+                }
+              }
+
+              if (IsValid)
+              {
+                OutputSz += QCopyStringMoveDest("<code>", &OutputChar);
+                OutputSz += QCopyStringMoveDest(LookAheadBuffer, &OutputChar);
+                OutputSz += QCopyStringMoveDest("</code>", &OutputChar);
+              }
+              else
+              {
+                OutputSz += QCopyStringMoveDest(LookAheadBuffer, &OutputChar);
+              }
+              CurrentChar = LookAhead; // move current char to look ahead, as everything is now done here
+            }
+            else if (*CurrentChar == '\n')
+            {
+              // @todo: have code for list evaluation and conversion completely separate
+              if (LiStarted == 1)
+              {
+                // closes a list element
+                OutputSz += QCopyStringMoveDest(LiMapping[1], &OutputChar);
+                LiStarted = 0;
+              }
+              else if (UlStarted == 1)
+              {
+                // in the case a list element was closen with \n
+                // having this will close the list
+                OutputSz += QCopyStringMoveDest(UlMapping[1], &OutputChar);
+                UlStarted = 0;
+              }
+              *OutputChar++ = *CurrentChar++;
+              ++OutputSz;
+            }
+            else 
             {
               *OutputChar++ = *CurrentChar++;
               ++OutputSz;
             }
-            free(LinkBlock);
           }
-          else if (*CurrentChar == ' ' && *(CurrentChar+1) == ' ')
+          OutputSz += QCopyStringMoveDest("</article>\n</body>\n</html>", &OutputChar);
+          // write translated file to dest folder
+          I32 OutputFpLen = 0;
+          char *OutputFilePath = malloc(KB(4));
+          OutputFpLen += AppendToPath(&OutputFilePath, DestDir, FilePointer->d_name, 0);
+          // check if the source filename is .md
+          // this will be converted to html
+          // get the .md extension offet
+          char *MdOffset = OutputFilePath + OutputFpLen - 3;
+          if (QStrEqual(MdOffset,".md")) 
           {
-            // if there are two space found
-            // add a break tag
-            OutputSz += QCopyStringMoveDest("<br>", &OutputChar);
-            CurrentChar+=2;
+            QCopyStringMoveDest(".html", &MdOffset);
+            *MdOffset = 0;
           }
-          else if (*CurrentChar == '-' && *(CurrentChar+1) == ' ')
-          {
-            if (UlStarted == 0)
-            {
-              OutputSz += QCopyStringMoveDest(UlMapping[0], &OutputChar);
-              UlStarted = 1;
-            }
-            OutputSz += QCopyStringMoveDest(LiMapping[0], &OutputChar);
-            CurrentChar += 2;
-            LiStarted = 1;
-          }
-          else if (*CurrentChar == '`')
-          {
-            if (InlineCodeStarted == 0)
-            {
-              OutputSz += QCopyStringMoveDest("<code>", &OutputChar);
-              InlineCodeStarted = 1;
-            }
-            else
-            {
-              OutputSz += QCopyStringMoveDest("</code>", &OutputChar);
-              InlineCodeStarted = 0;
-            }
-            ++CurrentChar;
-          }
-          else if (*CurrentChar == '*')
-          {
-            ++FmtIndex;
-            ++CurrentChar;
-          }
-          else if (FmtIndex > -1 && *CurrentChar != '*')
-          {
-            // reach non star character
-            // add starting tag corresponding to format specifier
-            if (FmtStarted == 0)
-            {
-              OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][0], &OutputChar);
-              FmtStarted = 1;
-            }
-            else
-            {
-              OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][1], &OutputChar);
-              FmtStarted = 0;
-            }
-            FmtIndex = -1;
-          }
-          else if (*CurrentChar == '\n')
-          {
-            if (LiStarted == 1)
-            {
-              // closes a list element
-              OutputSz += QCopyStringMoveDest(LiMapping[1], &OutputChar);
-              LiStarted = 0;
-            }
-            else if (UlStarted == 1)
-            {
-              // in the case a list element was closen with \n
-              // having this will close the list
-              OutputSz += QCopyStringMoveDest(UlMapping[1], &OutputChar);
-              UlStarted = 0;
-            }
-            *OutputChar++ = *CurrentChar++;
-            ++OutputSz;
-          }
-          else 
-          {
-            *OutputChar++ = *CurrentChar++;
-            ++OutputSz;
-          }
-        }
-        OutputSz += QCopyStringMoveDest("</article>\n</body>\n</html>", &OutputChar);
-        closedir(DirPointer);
-        // write translated file to dest folder
-        // @fix
-        FILE *WriteFp = fopen("./index.html", "w");
-        fwrite(OutputStr, 1, OutputSz, WriteFp);
+          FILE *WriteFp = fopen(OutputFilePath, "w");
+          size_t StuffWritten = fwrite(OutputStr, 1, OutputSz, WriteFp);
 
-        // cleanup
-        free(OutputStr);
-        free(IndexStr);
-        free(FilePath);
-        return;
+          // cleanup
+          fclose(WriteFp);
+          fclose(IndexFp);
+
+          free(OutputFilePath);
+          free(OutputStr);
+          free(IndexStr);
+          free(FilePath);
+        }
       }
       else if (FilePointer->d_type == DT_DIR)
       {
-        // else: copy file to dest location
+        // FilePointer pointing to a directory
         // IF DIRECTORY:
+        char *SrcSubDir = malloc(KB(4));
+        char *DestSubDir= malloc(KB(4));
+
+        AppendToPath(&DestSubDir, DestDir, FilePointer->d_name, 1);
+        struct stat subSt = {0};
         // open dir
-        char *DirName = malloc(256*sizeof(char));
+        if (stat(DestSubDir, &subSt) == -1)
+        {
+          // create the same directory in dest path
+          mkdir(DestSubDir, 0700);
+        }
         // START
         // create the directory prefix
         // this will create the path where it adds the parent directory to the 
-        // dir path
-        char *_dir_ptr = DirName;
-        QCopyStringMoveDest(DirPath, &_dir_ptr);
-        // check if previous index has slash
-        if (*(_dir_ptr-1) != '/') {
-          *_dir_ptr++ = '/';
-        }
-        QCopyString(FilePointer->d_name, &_dir_ptr);
-        ReadDirectoryRecursively(DirName, state);
+        AppendToPath(&SrcSubDir, SrcDir, FilePointer->d_name, 1);
+        ReadDirectoryRecursively(SrcSubDir, DestSubDir, state);
         // END
-        free(DirName);
+        free(DestSubDir);
+        free(SrcSubDir);
       }
       // === figure out
     } while (FilePointer != NULL);
@@ -377,8 +545,8 @@ void ReadDirectoryRecursively(char *DirPath, GlobalState *state)
 
 int main(int argc, char **argv)
 {
-  char *src = malloc(256);
-  char *dest = malloc(256);
+  char *src = malloc(KB(4));
+  char *dest = malloc(KB(4));
 
 
   while (*++argv != 0) 
@@ -412,15 +580,15 @@ int main(int argc, char **argv)
   char *HeaderTag = "<!DOCTYPE html>\n"
   "<html>\n<head>\n"
     "<title>Talha Aamir</title>\n"
-    "<link rel='icon' type='image/x-icon' href='./assets/favicon.ico.png' />\n"
-    "<link rel='stylesheet' href='./styles.css' />\n"
+    "<link rel='icon' type='image/x-icon' href='/assets/favicon.ico.png' />\n"
+    "<link rel='stylesheet' href='/styles.css' />\n"
   "</head>";
   char *NavBarComp = "<ul class='nav-bar'>\n"
-  "<li><a href='./index.html'>Home</a></li>\n"
-  "<li><a href='./blog/root.html'>Blog</a></li>\n"
-  "<li><a href='./projects/root.html'>Projects</a></li>\n"
-  "<li><a href='./work/root.html'>Work</a></li>\n"
-  "<li><a href='./assets/resume.pdf' target='_blank'>Resume</a></li>\n"
+  "<li><a href='/index.html'>Home</a></li>\n"
+  "<li><a href='/blog/root.html'>Blog</a></li>\n"
+  "<li><a href='/projects/root.html'>Projects</a></li>\n"
+  "<li><a href='/work/root.html'>Work</a></li>\n"
+  "<li><a href='/assets/resume.pdf' target='_blank'>Resume</a></li>\n"
   "</ul>";
   GlobalState state = {0};
   state.Src = src;
@@ -428,8 +596,7 @@ int main(int argc, char **argv)
   state.HeaderTag = HeaderTag;
   state.NavBarComp = NavBarComp;
 
-  ReadDirectoryRecursively(src, &state);
-  // go to source folder and get a handle to the directory
+  ReadDirectoryRecursively(src, dest, &state);
   // cleanup
   free(dest);
   free(src);
