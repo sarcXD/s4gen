@@ -154,7 +154,6 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
           int FmtWrapperInd = 1;
 
           int FmtIndex = -1;
-          int HeaderIndex = -1;
           B8 UlStarted = 0;
           B8 LiStarted = 0;
           B8 FmtStarted = 0;
@@ -210,14 +209,16 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             {
               // @note: Parse Headings, independant
               B8 IsValidHeading = 1;
-              ++HeaderIndex;
+              I8 HeaderIndex = 0;
               B8 StartedDec = 0;
+              char TmpBuffer[4];
               while(*CurrentChar++ != '\n')
               {
                 if (IsValidHeading)
                 {
-                  if (*CurrentChar == '#')
+                  if (*CurrentChar == '#' && HeaderIndex < 4)
                   {
+                    TmpBuffer[HeaderIndex] = '#';
                     ++HeaderIndex;
                   }
                   else if (StartedDec == 0 && *CurrentChar == ' ')
@@ -233,12 +234,18 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
                     *OutputChar++ = *CurrentChar;
                     ++OutputSz;
                   }
-                  else if (StartedDec == 0)
+                  else if (StartedDec == 0) // if # ends and we dont get a space then this heading is incorrect
                   {
                     // once we enter this loop, it will prevent reaching here for that line
                     // none of the re-assignment will be repeated
                     // you'd have to corrupt my memory for that to happen, so maybe in a rare solar event
                     IsValidHeading = 0;
+                    OutputSz += QCopyStringMoveDest(TmpBuffer, &OutputChar);
+                    *OutputChar++ = *CurrentChar;
+                    ++OutputSz;
+                  }
+                  else
+                  {
                     *OutputChar++ = *CurrentChar;
                     ++OutputSz;
                   }
@@ -420,6 +427,15 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
               {
                 IsMultiline = 1;
                 LookAhead += 3; // move LookAhead after ```
+                if (*(LookAhead) == '\n')
+                {
+                /* additional check for removing a new line
+                 * thing is that, in writing markdown, you create a new line
+                 * but that just keeps the newline when converting to html
+                 * and you see an extra space in the starting of the code block so its just annoying
+                */
+                  ++LookAhead;
+                }
               }
               else
               {

@@ -1,1 +1,1 @@
-gcc main.c -o main.exe -g
+gcc main.c -o mtssg -g
