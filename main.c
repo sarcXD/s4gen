@@ -36,9 +36,29 @@
  */
 
 // @todo: 
-// need to handle paragraphs
+// Error Logging: 
+//  single, multi-line code, format specifiers not ended properly
+// Numbered Lists
+// Memory Arenas and Functions
+// Custom components
+// Custom HTML Headers
+// Table Support, through 
 
-typedef struct GlobalState{
+typedef struct FileDetails {
+  char *FilePath; // Path and Name of file open
+  I32 CurrLine; // Line currently being read
+} FileDetails;
+
+typedef struct MdConverter {
+  I8 FmtIndex;
+  B8 UlStarted;
+  B8 LiStarted;
+  B8 FmtStarted;
+  B8 ParaStarted;
+  FileDetails File;
+} MdConverter;
+
+typedef struct GlobalState {
   char *Src;
   char *Dest;
   char *HeaderTag;
@@ -140,13 +160,15 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
           char *CurrentChar = IndexStr;
           char *OutputChar = OutputStr;
 
-          int FmtWrapperInd = 1;
-
-          int FmtIndex = -1;
-          B8 UlStarted = 0;
-          B8 LiStarted = 0;
-          B8 FmtStarted = 0;
-          B8 ParaStarted = 0;
+          FileDetails File = {.CurrLine=0,.FilePath=FilePath};
+          MdConverter MdState = {
+            .FmtIndex=-1, // Format Mappings Index
+            .FmtStarted=0, // Is a Format Started
+            .UlStarted=0, // Is an Unordered List started
+            .LiStarted=0, // Is a list element started
+            .ParaStarted=0, // Is a paragraph started
+            .File=File,
+          };
           /* @note
            * HeaderMappings, FormatMappings, are arranged in an order
            * this is simple, there is an incremental order, which makes
@@ -195,14 +217,15 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
           OutputSz += QCopyStringMoveDest("<article class=\"article-ctn\">", &OutputChar);
           while (*CurrentChar != 0)
           {
+            // ****** HEADINGS *********
             if (*CurrentChar == '#')
             {
               // check if paragraph should end
-              if (ParaStarted)
+              if (MdState.ParaStarted)
               {
                 // @note: the only condition alongside 2 newlines where we need to end a paragraph
                 OutputSz += QCopyStringMoveDest("</p>", &OutputChar);
-                ParaStarted = 0;
+                MdState.ParaStarted = 0;
               }
               // @note: Parse Headings, independant
               B8 IsValidHeading = 1;
@@ -237,11 +260,11 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
                     // none of the re-assignment will be repeated
                     // you'd have to corrupt my memory for that to happen, so maybe in a rare solar event
                     IsValidHeading = 0;
-                    if (ParaStarted == 0)
+                    if (MdState.ParaStarted == 0)
                     {
                       // @note if paragraph is not started, then begin
                       OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
-                      ParaStarted = 1;
+                      MdState.ParaStarted = 1;
                     }
                     OutputSz += QCopyStringMoveDest(TmpBuffer, &OutputChar);
                     *OutputChar++ = *CurrentChar;
@@ -262,14 +285,14 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
                 }
               };
             }
-            // link handling
+            // ********* LINKS/URLS ***********
             else if (*CurrentChar == '[')
             {
-              if (ParaStarted == 0)
+              if (MdState.ParaStarted == 0)
               {
                 // @note if paragraph is not started, then begin
                 OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
-                ParaStarted = 1;
+                MdState.ParaStarted = 1;
               }
               // search ahead until a \n, and see if user wanted a valid link 
               char *LookAhead = CurrentChar + 1;
@@ -381,11 +404,12 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*CurrentChar == ' ' && *(CurrentChar+1) == ' ')
             {
-              if (ParaStarted == 0)
+              // ************ LINE BREAKS **************
+              if (MdState.ParaStarted == 0)
               {
                 // @note if paragraph is not started, then begin
                 OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
-                ParaStarted = 1;
+                MdState.ParaStarted = 1;
               }
               // if there are two space found
               // add a break tag
@@ -394,65 +418,60 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*(CurrentChar-1) == '\n' && *CurrentChar == '-' && *(CurrentChar+1) == ' ')
             {
-              if (ParaStarted == 0)
+              if (MdState.ParaStarted == 0)
               {
                 // @note if paragraph is not started, then begin
                 OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
-                ParaStarted = 1;
+                MdState.ParaStarted = 1;
               }
-              if (UlStarted == 0)
+              if (MdState.UlStarted == 0)
               {
                 OutputSz += QCopyStringMoveDest(UlMapping[0], &OutputChar);
-                UlStarted = 1;
+                MdState.UlStarted = 1;
               }
               OutputSz += QCopyStringMoveDest(LiMapping[0], &OutputChar);
               CurrentChar += 2;
-              LiStarted = 1;
+              MdState.LiStarted = 1;
             }
             else if (*CurrentChar == '*')
             {
-              if (ParaStarted == 0)
+              if (MdState.ParaStarted == 0)
               {
                 // @note if paragraph is not started, then begin
                 OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
               }
               // @todo: I dont know why I am just doing everything top level, since that is a horrible idea now that I see it.
               // I need to move the evaluation for this as well as the code copying inside here, in another loop
-              ++FmtIndex;
+              ++MdState.FmtIndex;
               ++CurrentChar;
             }
-            else if (FmtIndex > -1 && *CurrentChar != '*')
+            else if (MdState.FmtIndex > -1 && *CurrentChar != '*')
             {
-              // @todo: move stuff in the CurrentChar condition
-              // reach non star character
-              // add starting tag corresponding to format specifier
-              if (FmtStarted == 0)
+              if (MdState.FmtStarted == 0)
               {
-                OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][0], &OutputChar);
-                FmtStarted = 1;
+                OutputSz += QCopyStringMoveDest(FormatMappings[MdState.FmtIndex][0], &OutputChar);
+                MdState.FmtStarted = 1;
               }
               else
               {
-                OutputSz += QCopyStringMoveDest(FormatMappings[FmtIndex][1], &OutputChar);
-                FmtStarted = 0;
+                OutputSz += QCopyStringMoveDest(FormatMappings[MdState.FmtIndex][1], &OutputChar);
+                MdState.FmtStarted = 0;
               }
-              FmtIndex = -1;
+              MdState.FmtIndex = -1;
             }
             else if (*CurrentChar == '`')
             {
-              if (ParaStarted == 0)
+              if (MdState.ParaStarted == 0)
               {
                 // @note if paragraph is not started, then begin
                 OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
-                ParaStarted = 1;
+                MdState.ParaStarted = 1;
               }
-              B8 IsValid = 0;
               B8 IsMultiline = 0;
 
               char *LookAhead = CurrentChar;
               char *LookAheadBuffer = calloc(1, MB(1));
               char *BuffPtr = LookAheadBuffer;
-              I32 BuffSz = 0;
 
               // check if this is multi-line or inline
               if (*(LookAhead+1) == '`' && *(LookAhead+2) == '`')
@@ -481,12 +500,10 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
                 {
                   if (*LookAhead == '`' && *(LookAhead+1) == '`' && *(LookAhead+2) == '`')
                   {
-                    IsValid = 1;
                     LookAhead += 3; // move LookAhead after the ```
                     break;
                   }
                   *BuffPtr++ = *LookAhead++;
-                  ++BuffSz;
                 }
               }
               else
@@ -495,79 +512,75 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
                 {
                   if (*LookAhead == '`')
                   {
-                    IsValid = 1;
                     ++LookAhead; // move LookAhead after `
                     break;
                   }
                   *BuffPtr++ = *LookAhead++;
-                  ++BuffSz;
                 }
               }
 
-              if (IsValid)
+              /*
+               * @note: so, I no longer care about validity. Since most markdown converters don't care, I don't either.
+               * Everytime I see an invalid/incomplete code whether inline or block, I'll just autoclose it
+               */
+              if (IsMultiline)
               {
-                if (IsMultiline)
-                {
-                  OutputSz += QCopyStringMoveDest("<div class=\"multiline\">", &OutputChar);
-                  OutputSz += QCopyStringMoveDest(LookAheadBuffer, &OutputChar);
-                  OutputSz += QCopyStringMoveDest("</div>", &OutputChar);
-                }
-                else
-                {
-                  OutputSz += QCopyStringMoveDest("<code>", &OutputChar);
-                  OutputSz += QCopyStringMoveDest(LookAheadBuffer, &OutputChar);
-                  OutputSz += QCopyStringMoveDest("</code>", &OutputChar);
-                }
+                OutputSz += QCopyStringMoveDest("<div class=\"multiline\">", &OutputChar);
+                OutputSz += QCopyStringMoveDest(LookAheadBuffer, &OutputChar);
+                OutputSz += QCopyStringMoveDest("</div>", &OutputChar);
+                CurrentChar = LookAhead; // move current char to look ahead, as everything is now done here
               }
               else
               {
+                OutputSz += QCopyStringMoveDest("<code>", &OutputChar);
                 OutputSz += QCopyStringMoveDest(LookAheadBuffer, &OutputChar);
+                OutputSz += QCopyStringMoveDest("</code>", &OutputChar);
+                CurrentChar = LookAhead; // move current char to look ahead, as everything is now done here
               }
-              CurrentChar = LookAhead; // move current char to look ahead, as everything is now done here
             }
             else if (*CurrentChar == '\n')
             {
-              if (*(CurrentChar+1) == '\n' && ParaStarted)
+              if (*(CurrentChar+1) == '\n' && MdState.ParaStarted)
               {
                 // @note: the only condition alongside 2 newlines where we need to end a paragraph
                 OutputSz += QCopyStringMoveDest("</p>", &OutputChar);
-                ParaStarted = 0;
+                MdState.ParaStarted = 0;
               } 
 
               // @todo: have code for list evaluation and conversion completely separate
-              if (LiStarted == 1)
+              if (MdState.LiStarted == 1)
               {
                 // closes a list element
                 OutputSz += QCopyStringMoveDest(LiMapping[1], &OutputChar);
-                LiStarted = 0;
+                MdState.LiStarted = 0;
               }
-              else if (UlStarted == 1)
+              else if (MdState.UlStarted == 1)
               {
                 // in the case a list element was closen with \n
                 // having this will close the list
                 OutputSz += QCopyStringMoveDest(UlMapping[1], &OutputChar);
-                UlStarted = 0;
+                MdState.UlStarted = 0;
               }
               *OutputChar++ = *CurrentChar++;
               ++OutputSz;
             }
             else 
             {
-              if (ParaStarted == 0)
+              if (MdState.ParaStarted == 0)
               {
                 // @note if paragraph is not started, then begin
                 OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
-                ParaStarted = 1;
+                MdState.ParaStarted = 1;
               }
               *OutputChar++ = *CurrentChar++;
               ++OutputSz;
             }
           }
-          if (ParaStarted == 1)
+          if (MdState.ParaStarted == 1)
           {
             // @note if paragraph is not started, then begin
             OutputSz += QCopyStringMoveDest("</p>", &OutputChar);
-            ParaStarted = 0;
+            MdState.ParaStarted = 0;
           }
           OutputSz += QCopyStringMoveDest("</article>\n</body>\n</html>", &OutputChar);
           // write translated file to dest folder
