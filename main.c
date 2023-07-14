@@ -35,14 +35,7 @@
  * @done: tasks done
  */
 
-/*
- * @done:
- * - inline and multiline codes
- * - fixed heading
- */
-
 // @todo: 
-// make multiline code show as its own block with new lines and whatnot
 // need to handle paragraphs
 
 typedef struct GlobalState{
@@ -54,10 +47,6 @@ typedef struct GlobalState{
 
 void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
 {
-  /**
-   * for a basic v1
-   * I will only focus on markdown parsing
-   */
   DIR *DirPointer = opendir(SrcDir);
   if (DirPointer != NULL)
   {
@@ -157,6 +146,7 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
           B8 UlStarted = 0;
           B8 LiStarted = 0;
           B8 FmtStarted = 0;
+          B8 ParaStarted = 0;
           /* @note
            * HeaderMappings, FormatMappings, are arranged in an order
            * this is simple, there is an incremental order, which makes
@@ -207,6 +197,13 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
           {
             if (*CurrentChar == '#')
             {
+              // check if paragraph should end
+              if (ParaStarted)
+              {
+                // @note: the only condition alongside 2 newlines where we need to end a paragraph
+                OutputSz += QCopyStringMoveDest("</p>", &OutputChar);
+                ParaStarted = 0;
+              }
               // @note: Parse Headings, independant
               B8 IsValidHeading = 1;
               I8 HeaderIndex = 0;
@@ -240,6 +237,12 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
                     // none of the re-assignment will be repeated
                     // you'd have to corrupt my memory for that to happen, so maybe in a rare solar event
                     IsValidHeading = 0;
+                    if (ParaStarted == 0)
+                    {
+                      // @note if paragraph is not started, then begin
+                      OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
+                      ParaStarted = 1;
+                    }
                     OutputSz += QCopyStringMoveDest(TmpBuffer, &OutputChar);
                     *OutputChar++ = *CurrentChar;
                     ++OutputSz;
@@ -262,6 +265,12 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             // link handling
             else if (*CurrentChar == '[')
             {
+              if (ParaStarted == 0)
+              {
+                // @note if paragraph is not started, then begin
+                OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
+                ParaStarted = 1;
+              }
               // search ahead until a \n, and see if user wanted a valid link 
               char *LookAhead = CurrentChar + 1;
               B8 SquareClosed = 0;
@@ -372,6 +381,12 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*CurrentChar == ' ' && *(CurrentChar+1) == ' ')
             {
+              if (ParaStarted == 0)
+              {
+                // @note if paragraph is not started, then begin
+                OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
+                ParaStarted = 1;
+              }
               // if there are two space found
               // add a break tag
               OutputSz += QCopyStringMoveDest("<br>", &OutputChar);
@@ -379,6 +394,12 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*(CurrentChar-1) == '\n' && *CurrentChar == '-' && *(CurrentChar+1) == ' ')
             {
+              if (ParaStarted == 0)
+              {
+                // @note if paragraph is not started, then begin
+                OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
+                ParaStarted = 1;
+              }
               if (UlStarted == 0)
               {
                 OutputSz += QCopyStringMoveDest(UlMapping[0], &OutputChar);
@@ -390,6 +411,11 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*CurrentChar == '*')
             {
+              if (ParaStarted == 0)
+              {
+                // @note if paragraph is not started, then begin
+                OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
+              }
               // @todo: I dont know why I am just doing everything top level, since that is a horrible idea now that I see it.
               // I need to move the evaluation for this as well as the code copying inside here, in another loop
               ++FmtIndex;
@@ -414,6 +440,12 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*CurrentChar == '`')
             {
+              if (ParaStarted == 0)
+              {
+                // @note if paragraph is not started, then begin
+                OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
+                ParaStarted = 1;
+              }
               B8 IsValid = 0;
               B8 IsMultiline = 0;
 
@@ -495,6 +527,13 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*CurrentChar == '\n')
             {
+              if (*(CurrentChar+1) == '\n' && ParaStarted)
+              {
+                // @note: the only condition alongside 2 newlines where we need to end a paragraph
+                OutputSz += QCopyStringMoveDest("</p>", &OutputChar);
+                ParaStarted = 0;
+              } 
+
               // @todo: have code for list evaluation and conversion completely separate
               if (LiStarted == 1)
               {
@@ -514,9 +553,21 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else 
             {
+              if (ParaStarted == 0)
+              {
+                // @note if paragraph is not started, then begin
+                OutputSz += QCopyStringMoveDest("<p>", &OutputChar);
+                ParaStarted = 1;
+              }
               *OutputChar++ = *CurrentChar++;
               ++OutputSz;
             }
+          }
+          if (ParaStarted == 1)
+          {
+            // @note if paragraph is not started, then begin
+            OutputSz += QCopyStringMoveDest("</p>", &OutputChar);
+            ParaStarted = 0;
           }
           OutputSz += QCopyStringMoveDest("</article>\n</body>\n</html>", &OutputChar);
           // write translated file to dest folder
