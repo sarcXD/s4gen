@@ -36,13 +36,13 @@
  */
 
 // @todo: 
-// Error Logging: 
-//  single, multi-line code, format specifiers not ended properly
 // Numbered Lists
 // Memory Arenas and Functions
 // Custom components
 // Custom HTML Headers
 // Table Support, through 
+// Error Logging: 
+//  single, multi-line code, format specifiers not ended properly
 
 typedef struct FileDetails {
   char *FilePath; // Path and Name of file open
@@ -418,6 +418,7 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*(CurrentChar-1) == '\n' && *CurrentChar == '-' && *(CurrentChar+1) == ' ')
             {
+              // ************** UNORDERED LIST **********************
               if (MdState.ParaStarted == 0)
               {
                 // @note if paragraph is not started, then begin
@@ -435,6 +436,7 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*CurrentChar == '*')
             {
+              // ****************** FORMAT SPECIFIERS *******************
               if (MdState.ParaStarted == 0)
               {
                 // @note if paragraph is not started, then begin
@@ -461,6 +463,7 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
             }
             else if (*CurrentChar == '`')
             {
+              // ************ CODE ***************
               if (MdState.ParaStarted == 0)
               {
                 // @note if paragraph is not started, then begin
