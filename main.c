@@ -36,7 +36,8 @@
  */
 
 // @todo: 
-// Numbered Lists
+// fix random paragraph tags on newlines
+// refactor the bad code, since right now it is all over the place
 // Images
 // Memory Arenas and Functions
 // Custom HTML Headers
@@ -109,14 +110,17 @@ B8 IsValidOrderedList(char *X)
     }
     ++LookAhead;
   }
-  if (valid && *LookAhead == '.' && *(LookAhead+1) == ' ')
+
+  if (valid)
+  {
+      return valid;
+  }
+
+  if (*LookAhead == '.' && *(LookAhead+1) == ' ')
   {
     valid = 1;
   }
-  else
-  {
-    valid = 0;
-  }
+
   return valid;
 }
 
@@ -470,7 +474,6 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
               OutputSz += QCopyStringMoveDest("<br>", &OutputChar);
               CurrentChar+=2;
             }
-            
             else if (*CurrentChar == '*')
             {
               // ****************** FORMAT SPECIFIERS *******************
