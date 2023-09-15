@@ -313,6 +313,8 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
                     // none of the re-assignment will be repeated
                     // you'd have to corrupt my memory for that to happen, so maybe in a rare solar event
                     IsValidHeading = 0;
+                    // @todo: fix this if condition for list check.
+                    // also what the hell is going on with the progression here even
                     if (MdState.UlStarted == 0 && MdState.ParaStarted == 0)
                     {
                       // @note if paragraph is not started, then begin
