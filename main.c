@@ -36,6 +36,8 @@
  */
 
 // @todo: 
+// maybe make everything more stateful based on the MdConverter, so I dont have to rely on previous ifs or
+// changes that happened in a previous loop to understand what to do, huge pain
 // fix random paragraph tags on newlines
 // refactor the bad code, since right now it is all over the place
 // Images
