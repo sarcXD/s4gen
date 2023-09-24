@@ -756,6 +756,39 @@ void Make_Dir(struct amrs_string dir_path)
     return;
 }
 
+uint32_t Get_File_Size(FILE *file_pointer)
+{
+    fseek(file_pointer, 0, SEEK_END);
+    uint32_t size = ftell(file_pointer);
+    fseek(file_pointer, 0, SEEK_SET);
+
+    return size;
+}
+
+// @resume: was abstracting away read_file functions
+// Need to add error codes and error handling
+// Goal: make this work for linux and windows
+// only focusing on linux for now
+uint32_t Read_File(char *file_path, const char *read_attributes, 
+        char *file_buffer)
+{
+    FILE *read_fp = fopen(file_path, read_attributes);
+    uint32_t file_size = Get_File_Size(read_fp);
+
+    fread(file_buffer, 1, file_size, read_fp);
+
+    return file_size;
+}
+
+uint32_t Write_File(char *file_path, const char *write_attributes,
+        char *file_contents, uint32_t file_contents_len)
+{
+    FILE *write_fp = fopen(file_path, write_attributes);
+    uint32_t bytes_written = fwrite(file_contents, 1, file_contents_len, write_fp);
+
+    return bytes_written;
+}
+
 void Process(struct amrs_string src_path, struct amrs_string dest_path)
 {
     if (!src_path.is_allocated || !dest_path.is_allocated) {
@@ -816,6 +849,7 @@ void Process(struct amrs_string src_path, struct amrs_string dest_path)
             Amrs_Init_Empty(&sub_dest_path, MAX_PATH_LEN);
             Amrs_Copy_Str(&dest_path, &sub_dest_path);
             Amrs_Append_Str_Raw(&sub_dest_path, file_pointer->d_name);
+            Add_Dir_Slash(&sub_dest_path);
 
             Process(*sub_src_path, sub_dest_path);
 
@@ -830,8 +864,21 @@ void Process(struct amrs_string src_path, struct amrs_string dest_path)
             struct amrs_result find_md_substr = Amrs_Find_Const_Substring_Raw(filepath, ".md", 3);
             if (find_md_substr.status == AMRS_NO_MATCH_FOUND)
             {
-                // just copy the file
-                printf("file found!!");
+                uint32_t max_file_capacity = MB(64);
+                char *file_contents = calloc(1, max_file_capacity);
+                uint32_t read_file_size = Read_File(filepath->buffer, "rb",
+                        file_contents);
+
+                struct amrs_string output_file_path = {0};
+                Amrs_Init_Empty(&output_file_path, MAX_PATH_LEN);
+                Amrs_Copy_Str(&dest_path, &output_file_path);
+                Amrs_Append_Str_Raw(&output_file_path, file_pointer->d_name);
+
+                Write_File(output_file_path.buffer, "wb",
+                        file_contents, read_file_size);
+
+                Amrs_Free(&output_file_path);
+                free(file_contents);
             }
             else if (find_md_substr.status == AMRS_OK)
             {
