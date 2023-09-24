@@ -1,3 +1,4 @@
+#include "amr_strings.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -22,12 +23,14 @@
 #define MB(x) (1024*(KB(x)))
 
 #include "utils.c"
+#include "amr_strings.c"
 
 #define H1Index 0
 #define H2Index 1
 #define H3Index 2
 #define H4Index 3
 
+#define MAX_PATH_LEN 256
 /*
  * comment keywords ref:
  * @todo: things to do
@@ -39,7 +42,6 @@
 // maybe make everything more stateful based on the MdConverter, so I dont have to rely on previous ifs or
 // changes that happened in a previous loop to understand what to do, huge pain
 // fix random paragraph tags on newlines
-// refactor the bad code, since right now it is all over the place
 // Images
 // Memory Arenas and Functions
 // Custom HTML Headers
@@ -64,10 +66,10 @@ typedef struct MdConverter {
 } MdConverter;
 
 typedef struct GlobalState {
-  char *Src;
-  char *Dest;
-  char *HeaderTag;
-  char *NavBarComp;
+  struct amrs_string src_path;
+  struct amrs_string dest_path;
+  struct amrs_string header_tag;
+  struct amrs_string navbar_component;
 } GlobalState;
 
 #define NUM_START 48
@@ -126,6 +128,7 @@ B8 IsValidOrderedList(char *X)
   return valid;
 }
 
+#if 0
 void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
 {
   DIR *DirPointer = opendir(SrcDir);
@@ -733,63 +736,190 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
     closedir(DirPointer);
   }
 }
+#endif
+
+void Add_Dir_Slash(struct amrs_string *path)
+{
+    // TODO(talha): add error codes here?
+    if (*(path->last_element) != '/') {
+        Amrs_Append_Const_Str_Raw(path, "/", 1);
+    }
+}
+
+void Make_Dir(struct amrs_string dir_path)
+{
+    struct stat st = {0};
+    if (stat(dir_path.buffer, &st) == -1) {
+        mkdir(dir_path.buffer, 0700);
+    }
+
+    return;
+}
+
+void Process(struct amrs_string src_path, struct amrs_string dest_path)
+{
+    if (!src_path.is_allocated || !dest_path.is_allocated) {
+        return;
+    }
+
+    // open directory
+    DIR *dir_pointer = opendir(src_path.buffer);
+    if (dir_pointer == NULL)
+    {
+        printf("Error! failed to open directory");
+        return;
+    }
+    
+    // make directory
+    Make_Dir(dest_path);
+    struct dirent *file_pointer;
+    do {
+        file_pointer = readdir(dir_pointer);
+        if (file_pointer == NULL) {
+            break;
+        }
+        if (*file_pointer->d_name == '.') 
+        {
+            /* @note: this is supposed to handle special folders
+             * .
+             * ..
+             * .somename
+             * I will be ignoring those and not going into them
+             * This is good for me since those are usually some internal structures
+             * that should not be used in static files
+             */
+            continue;
+        }
+
+        struct amrs_string subpath = {0};
+
+        Amrs_Init_Empty(&subpath, MAX_PATH_LEN);
+        Amrs_Copy_Str(&src_path, &subpath);
+        Amrs_Append_Str_Raw(&subpath, file_pointer->d_name);
+
+        // amrf_is_directory
+        struct stat st_subpath = {0};
+        if (stat(subpath.buffer, &st_subpath) != 0) {
+            return;
+        }
+
+        size_t status_is_dir = S_ISDIR(st_subpath.st_mode);
+        if (status_is_dir)
+        {
+            Add_Dir_Slash(&subpath);
+            printf("found dir %s", file_pointer->d_name);
+            
+            // process_directory
+            struct amrs_string *sub_src_path = &subpath;
+
+            struct amrs_string sub_dest_path = {0};
+            Amrs_Init_Empty(&sub_dest_path, MAX_PATH_LEN);
+            Amrs_Copy_Str(&dest_path, &sub_dest_path);
+            Amrs_Append_Str_Raw(&sub_dest_path, file_pointer->d_name);
+
+            Process(*sub_src_path, sub_dest_path);
+
+            Amrs_Free(&sub_dest_path);
+        }
+
+        size_t status_is_file = S_ISREG(st_subpath.st_mode);
+        if (status_is_file)
+        {
+            struct amrs_string *filepath = &subpath;
+
+            struct amrs_result find_md_substr = Amrs_Find_Const_Substring_Raw(filepath, ".md", 3);
+            if (find_md_substr.status == AMRS_NO_MATCH_FOUND)
+            {
+                // just copy the file
+                printf("file found!!");
+            }
+            else if (find_md_substr.status == AMRS_OK)
+            {
+                // convert to html
+                printf("normal html file! convert it!");
+            }
+
+        }
+
+        Amrs_Free(&subpath);
+    } while (file_pointer != NULL);
+    closedir(dir_pointer);
+}
 
 int main(int argc, char **argv)
 {
-  char *src = malloc(KB(4));
-  char *dest = malloc(KB(4));
+  struct amrs_string src_path = {0};
+  struct amrs_string dest_path = {0};
 
+  Amrs_Init_Empty(&src_path, MAX_PATH_LEN);
+  Amrs_Init_Empty(&dest_path, MAX_PATH_LEN);
 
   while (*++argv != 0) 
   {
-    if (QStrEqual(*argv, "--src")) 
-    {
-      char *SrcPtr = src;
-      QCopyStringMoveDest(*++argv, &SrcPtr);
-      // handling the case where slashes at end excluded
-      if (*(SrcPtr-1) != '/') *SrcPtr = '/';
-      printf("Src path is %s\n", src);
-    }
-    else if (QStrEqual(*argv, "--dest"))
-    {
-      char *DestPtr = dest;
-      QCopyStringMoveDest(*++argv, &DestPtr);
-      // handling the case where slashes at end excluded
-      if (*(DestPtr-1) != '/') *DestPtr = '/';
-      printf("Dest path is %s\n", dest);
-    }
-    else
-    {
-      printf("Unrecognized argument: %s\n", *argv);
-      free(dest);
-      free(src);
-      return -1;
-    }
+      if (QStrEqual(*argv, "--src")) 
+      {
+          uint8_t status = Amrs_Append_Str_Raw(&src_path, *++argv);
+          if (status != AMRS_OK) {
+              return -1;
+          }
+
+          Add_Dir_Slash(&src_path);
+          printf("Src path is %s\n", src_path.buffer);
+      }
+      else if (QStrEqual(*argv, "--dest"))
+      {
+          uint8_t status = Amrs_Append_Str_Raw(&dest_path, *++argv);
+          if (status != AMRS_OK) {
+              return -1;
+          }
+          Add_Dir_Slash(&dest_path);
+
+          printf("Dest path is %s\n", dest_path.buffer);
+      }
+      else
+      {
+          printf("Unrecognized argument: %s\n", *argv);
+          Amrs_Free(&src_path);
+          Amrs_Free(&dest_path);
+          return 0;
+      }
   }
 
-
-  char *HeaderTag = "<!DOCTYPE html>\n"
+  const char *HeaderTag = "<!DOCTYPE html>\n"
   "<html>\n<head>\n"
     "<title>Talha Aamir</title>\n"
     "<link rel='icon' type='image/x-icon' href='/assets/favicon.ico.png' />\n"
     "<link rel='stylesheet' href='/styles.css' />\n"
   "</head>";
-  char *NavBarComp = "<ul class='nav-bar'>\n"
+  uint32_t header_len = strlen(HeaderTag);
+
+  const char *NavBarComp = "<ul class='nav-bar'>\n"
   "<li><a href='/index.html'>Home</a></li>\n"
   "<li><a href='/blog/root.html'>Blog</a></li>\n"
   "<li><a href='/projects/root.html'>Projects</a></li>\n"
   "<li><a href='/work/root.html'>Work</a></li>\n"
   "<li><a href='/assets/resume.pdf' target='_blank'>Resume</a></li>\n"
   "</ul>";
-  GlobalState state = {0};
-  state.Src = src;
-  state.Dest = dest;
-  state.HeaderTag = HeaderTag;
-  state.NavBarComp = NavBarComp;
+  uint32_t navbar_len = strlen(NavBarComp);
 
-  ReadDirectoryRecursively(src, dest, &state);
+  struct amrs_string header_tag = {0};
+  Amrs_Init_Const_Str_Raw(&header_tag, 512, HeaderTag, header_len);
+
+  struct amrs_string navbar_component = {0};
+  Amrs_Init_Const_Str_Raw(&navbar_component, 512, NavBarComp, navbar_len);
+
+  GlobalState state = {0};
+  state.src_path = src_path;
+  state.dest_path = dest_path;
+
+  //ReadDirectoryRecursively(src, dest, &state);
+  Process(src_path, dest_path);
+
   // cleanup
-  free(dest);
-  free(src);
+  Amrs_Free(&navbar_component);
+  Amrs_Free(&header_tag);
+  Amrs_Free(&dest_path);
+  Amrs_Free(&src_path);
+
   return 1;
 }

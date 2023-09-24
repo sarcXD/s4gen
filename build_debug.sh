@@ -1,1 +1,1 @@
-gcc main.c -o mtssg -g
+clang -std=c99 main.c -o mtssg -g
