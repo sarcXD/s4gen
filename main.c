@@ -963,6 +963,8 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                         if (index.val == '-')
                         {
                         }
+
+                        running_index++;
                     }
 
                     // close html file tags
