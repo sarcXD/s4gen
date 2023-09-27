@@ -15,6 +15,8 @@
 #define AMRS_ALLOCATED_FALSE 6
 #define AMRS_DOUBLE_INIT 7
 #define AMRS_NO_MATCH_FOUND 8
+#define AMRS_INVALID_REPLACEMENT_INDEX 9
+#define AMRS_INVALID_INDEX 10
 
 // @note: 
 // Relatively safe string library. Built for learning and performance (not great right now)
@@ -34,16 +36,28 @@ struct amrs_string {
     char *buffer;
 };
 
-struct amrs_result {
+struct amrs_result_u32 {
     uint32_t val;
     uint8_t status;
 };
 
-// TODO(talha): STR_RAW functions are a bit sus since I donot pass a length
-// instead I rely on the capacity being the definitive limit, which I guess is fine
+struct amrs_result_char {
+    char val;
+    uint8_t status;
+};
+
+// @note: not sure I need the const str methods
+// especially since str methods function the same
+// I'll still keep them I guess, will look into removing them later on if I find no 
+// issues with the normal method
 
 uint8_t Amrs_Is_Allocated(struct amrs_string str);
 uint8_t Amrs_Init_Empty(struct amrs_string *str, uint32_t capacity);
+
+// initialises an empty string and transfers a buffer
+// allows the user to manage their own memory and does not rely on
+// the internal memory allocations of the library
+uint8_t Amrs_Init_Empty_Pass_Buffer(struct amrs_string *str, char *buffer, uint32_t capacity);
 uint8_t Amrs_Free(struct amrs_string *str);
 
 // Initialise const char* based strings. 
@@ -55,6 +69,12 @@ uint8_t Amrs_Init_Const_Str_Raw(struct amrs_string *str, uint32_t capacity, cons
 // total capacity of the string to allow any operations
 uint8_t Amrs_Init_Str_Raw(struct amrs_string *str, uint32_t capacity, char *raw_str);
 
+struct amrs_result_char Amrs_Index(struct amrs_string str, uint32_t index);
+
+// append and copy operations use memcpy on the buffer
+// though the operation is trivial and can be done with a loop
+// meant to be able to be replaced by a simd operation
+
 // Append a const char* string to existing string.
 uint8_t Amrs_Append_Const_Str_Raw(struct amrs_string *str, const char *raw_str, uint32_t raw_str_len);
 
@@ -63,14 +83,22 @@ uint8_t Amrs_Append_Const_Str_Raw(struct amrs_string *str, const char *raw_str, 
 // Size is calculated and then checked with capacity to allow any operation
 uint8_t Amrs_Append_Str_Raw(struct amrs_string *str, char *raw_str);
 
-// NOTE(talha): Copy a string from copy_from to copy_to
-// uses memcpy on the buffer
-// performs explicit length checks
+// NOTE(talha): string copying methods
+// perform explicit length checks
 // since it uses amrs_string which defines length explicitly
 // it is relatively safe
+uint8_t Amrs_Append_Str(struct amrs_string *str, struct amrs_string *to_append);
 uint8_t Amrs_Copy_Str(struct amrs_string *copy_from, struct amrs_string *copy_to);
 
-struct amrs_result Amrs_Find_Const_Substring_Raw(struct amrs_string *str, const char *raw_substr, uint32_t raw_substr_len);
+// finds in str the given raw_substr 
+// returns an amrs_result
+// containing index of raw_substr
+// and status code indictaing whether the operation was a success
+struct amrs_result_u32
+Amrs_Find_Const_Substring_Raw(struct amrs_string *str, const char *raw_substr, uint32_t raw_substr_len);
+
+uint8_t Amrs_Replace_Const_Str_Raw(struct amrs_string *str, uint32_t replace_at,
+        const char *replace_with, uint32_t replace_with_len);
 
 // TODO(talha): implement this to get detailed errors from a status code
 const char *Amrs_Get_Status_Code_Info(uint8_t status_code);

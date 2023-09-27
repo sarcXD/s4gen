@@ -30,6 +30,19 @@ uint8_t Amrs_Init_Empty(struct amrs_string *str, uint32_t capacity)
     return AMRS_OK;
 }
 
+uint8_t Amrs_Init_Empty_Pass_Buffer(struct amrs_string *str, char *buffer, uint32_t capacity)
+{
+    if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_TRUE)
+    {
+        return AMRS_DOUBLE_INIT;
+    }
+    if (capacity ==  0) return AMRS_INVALID_CAPACITY_LENGTH;
+
+    // @todo: implement this
+
+    return AMRS_OK;
+}
+
 uint8_t Amrs_Free(struct amrs_string *str)
 {
     if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_FALSE)
@@ -70,6 +83,25 @@ uint8_t Amrs_Init_Str_Raw(struct amrs_string *str, uint32_t capacity, char *raw_
     return status;
 }
 
+struct amrs_result_char Amrs_Index(struct amrs_string str, uint32_t index)
+{
+    struct amrs_result_char res = {0};
+    if (Amrs_Is_Allocated(str) == AMRS_ALLOCATED_FALSE)
+    {
+        res.status = AMRS_ALLOCATED_FALSE;
+        return res;
+    }
+
+    if (index >= str.len)
+    {
+        res.status = AMRS_INVALID_INDEX;
+    }
+
+    res.val = str.buffer[index];
+    res.status = AMRS_OK;
+    return res;
+}
+
 uint8_t Amrs_Append_Const_Str_Raw(struct amrs_string *str, const char *to_append, uint32_t to_append_len)
 {
     if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_FALSE)
@@ -81,17 +113,14 @@ uint8_t Amrs_Append_Const_Str_Raw(struct amrs_string *str, const char *to_append
     if (to_append_len == 0) return AMRS_INVALID_INSERT_LENGTH;                         // invalid insert length
     if (available_size < to_append_len) return AMRS_INSUFFICIENT_SPACE;             // insufficient space in str
     
-    for(uint32_t i=0; i < to_append_len; i++)
-    {
-        str->buffer[str->len] = to_append[i];
-        str->len++;
-        str->last_element = &str->buffer[str->len - 1];
-    }
+    memcpy(&(str->buffer[str->len]), to_append, to_append_len);
+    str->len = str->len + to_append_len;
+    str->last_element = &str->buffer[str->len - 1];
 
     return AMRS_OK;
 };
 
-uint8_t Amrs_Append_Str_Raw(struct amrs_string *str, char *raw_str)
+uint8_t Amrs_Append_Str_Raw(struct amrs_string *str, char *to_append)
 {
     if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_FALSE)
     {
@@ -99,20 +128,41 @@ uint8_t Amrs_Append_Str_Raw(struct amrs_string *str, char *raw_str)
     }
 
     uint32_t available_size = str->capacity - str->len;
-    uint32_t raw_str_len = strlen(raw_str);
-    if (raw_str_len == 0) return AMRS_INVALID_INSERT_LENGTH;                         // invalid insert length
-    if (available_size < raw_str_len) return AMRS_INSUFFICIENT_SPACE;             // insufficient space in str
+    uint32_t to_append_len = strlen(to_append);
+    if (to_append_len == 0) return AMRS_INVALID_INSERT_LENGTH;                         // invalid insert length
+    if (available_size < to_append_len) return AMRS_INSUFFICIENT_SPACE;             // insufficient space in str
     
-    for(uint32_t i=0; i < raw_str_len; i++)
-    {
-        str->buffer[str->len] = raw_str[i];
-        str->len++;
-        str->last_element = &str->buffer[str->len-1];
-    }
+    memcpy(&(str->buffer[str->len]), to_append, to_append_len);
+    str->len = str->len + to_append_len;
+
+    // @note: this last element seems mostly useless
+    str->last_element = &str->buffer[str->len - 1];
 
     return AMRS_OK;
 };
 
+uint8_t Amrs_Append_Str(struct amrs_string *str, struct amrs_string *to_append)
+{
+    if (Amrs_Is_Allocated(*to_append) == AMRS_ALLOCATED_FALSE) {
+        return AMRS_ALLOCATED_FALSE;
+    }
+    if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_FALSE) {
+        return AMRS_ALLOCATED_FALSE;
+    }
+    
+    if (to_append->len > str->capacity) {
+        return AMRS_INSUFFICIENT_SPACE;
+    }
+    
+    memcpy(&(str->buffer[str->len]), to_append->buffer, to_append->len);
+    str->len = str->len + to_append->len;
+    str->last_element = &str->buffer[str->len - 1];
+
+    return AMRS_OK;
+}
+
+// @note: copy str might not be required
+// as append_str functions the same way
 uint8_t Amrs_Copy_Str(struct amrs_string *copy_from, struct amrs_string *copy_to)
 {
     if (Amrs_Is_Allocated(*copy_from) == AMRS_ALLOCATED_FALSE) {
@@ -133,10 +183,10 @@ uint8_t Amrs_Copy_Str(struct amrs_string *copy_from, struct amrs_string *copy_to
     return AMRS_OK;
 }
 
-struct amrs_result 
+struct amrs_result_u32 
 Amrs_Find_Const_Substring_Raw(struct amrs_string *str, const char *raw_substr, uint32_t raw_substr_len)
 {
-    struct amrs_result result = {0};
+    struct amrs_result_u32 result = {0};
     if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_FALSE)
     {
         result.status = AMRS_ALLOCATED_FALSE;
@@ -193,4 +243,37 @@ Amrs_Find_Const_Substring_Raw(struct amrs_string *str, const char *raw_substr, u
         result.status = AMRS_NO_MATCH_FOUND;
     }
     return result;
+}
+
+uint8_t Amrs_Replace_Const_Str_Raw(struct amrs_string *str, uint32_t replace_at,
+        const char *replace_with, uint32_t replace_with_len)
+{
+    if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_FALSE)
+    {
+        return AMRS_ALLOCATED_FALSE;
+    }
+
+    if (replace_at > str->len)
+    {
+        return AMRS_INVALID_REPLACEMENT_INDEX;
+    }
+
+    uint32_t available_space = str->capacity - replace_at;
+    if (available_space < replace_with_len)
+    {
+        return AMRS_INSUFFICIENT_SPACE;
+    }
+
+    uint32_t replace_with_max_str_index = replace_at + replace_with_len;
+    uint32_t str_replace_with_len_increment = 0;
+    if (replace_with_max_str_index > str->len)
+    {
+        str_replace_with_len_increment = replace_with_max_str_index - str->len;
+    }
+
+    memcpy(&str->buffer[replace_at], replace_with, replace_with_len);
+    str->len = str->len + str_replace_with_len_increment;
+    str->last_element = &(str->buffer[str->len - 1]);
+
+    return AMRS_OK;
 }

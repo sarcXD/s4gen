@@ -65,12 +65,12 @@ typedef struct MdConverter {
   FileDetails File;
 } MdConverter;
 
-typedef struct GlobalState {
+struct global_state {
   struct amrs_string src_path;
   struct amrs_string dest_path;
   struct amrs_string header_tag;
   struct amrs_string navbar_component;
-} GlobalState;
+};
 
 #define NUM_START 48
 #define NUM_END 57
@@ -765,17 +765,29 @@ uint32_t Get_File_Size(FILE *file_pointer)
     return size;
 }
 
-// @resume: was abstracting away read_file functions
 // Need to add error codes and error handling
 // Goal: make this work for linux and windows
 // only focusing on linux for now
 uint32_t Read_File(char *file_path, const char *read_attributes, 
-        char *file_buffer)
+        char *file_buffer, uint32_t buffer_size)
 {
     FILE *read_fp = fopen(file_path, read_attributes);
     uint32_t file_size = Get_File_Size(read_fp);
 
-    fread(file_buffer, 1, file_size, read_fp);
+    uint32_t bytes_to_read_num = 0;
+    if (buffer_size < file_size)
+    {
+        printf("WARNING! file_size larger than buffer_size. Truncating to buffer_size\n");
+        printf("filepath: %s\n", file_path);
+
+        bytes_to_read_num = buffer_size;
+    }
+    else
+    {
+        bytes_to_read_num = file_size;
+    }
+
+    fread(file_buffer, 1, bytes_to_read_num, read_fp);
 
     return file_size;
 }
@@ -789,7 +801,7 @@ uint32_t Write_File(char *file_path, const char *write_attributes,
     return bytes_written;
 }
 
-void Process(struct amrs_string src_path, struct amrs_string dest_path)
+void Process(struct global_state state, struct amrs_string src_path, struct amrs_string dest_path)
 {
     if (!src_path.is_allocated || !dest_path.is_allocated) {
         return;
@@ -799,7 +811,7 @@ void Process(struct amrs_string src_path, struct amrs_string dest_path)
     DIR *dir_pointer = opendir(src_path.buffer);
     if (dir_pointer == NULL)
     {
-        printf("Error! failed to open directory");
+        printf("Error! failed to open directory\n");
         return;
     }
     
@@ -840,7 +852,7 @@ void Process(struct amrs_string src_path, struct amrs_string dest_path)
         if (status_is_dir)
         {
             Add_Dir_Slash(&subpath);
-            printf("found dir %s", file_pointer->d_name);
+            printf("found dir %s\n", file_pointer->d_name);
             
             // process_directory
             struct amrs_string *sub_src_path = &subpath;
@@ -851,7 +863,7 @@ void Process(struct amrs_string src_path, struct amrs_string dest_path)
             Amrs_Append_Str_Raw(&sub_dest_path, file_pointer->d_name);
             Add_Dir_Slash(&sub_dest_path);
 
-            Process(*sub_src_path, sub_dest_path);
+            Process(state, *sub_src_path, sub_dest_path);
 
             Amrs_Free(&sub_dest_path);
         }
@@ -861,13 +873,14 @@ void Process(struct amrs_string src_path, struct amrs_string dest_path)
         {
             struct amrs_string *filepath = &subpath;
 
-            struct amrs_result find_md_substr = Amrs_Find_Const_Substring_Raw(filepath, ".md", 3);
+            struct amrs_result_u32 find_md_substr = Amrs_Find_Const_Substring_Raw(filepath, ".md", 3);
+
             if (find_md_substr.status == AMRS_NO_MATCH_FOUND)
             {
-                uint32_t max_file_capacity = MB(64);
-                char *file_contents = calloc(1, max_file_capacity);
+                uint32_t max_file_size = MB(64);
+                char *file_contents = calloc(1, max_file_size);
                 uint32_t read_file_size = Read_File(filepath->buffer, "rb",
-                        file_contents);
+                        file_contents, max_file_size);
 
                 struct amrs_string output_file_path = {0};
                 Amrs_Init_Empty(&output_file_path, MAX_PATH_LEN);
@@ -882,8 +895,117 @@ void Process(struct amrs_string src_path, struct amrs_string dest_path)
             }
             else if (find_md_substr.status == AMRS_OK)
             {
-                // convert to html
-                printf("normal html file! convert it!");
+                // read file
+                uint32_t md_file_capacity = MB(64);
+                char *md_file = calloc(1, md_file_capacity);
+                uint32_t md_file_size = Read_File(filepath->buffer, "r",
+                        md_file, md_file_capacity);
+
+                // prepare html buffer
+                uint32_t html_buffer_capacity = MB(128);
+                struct amrs_string html_file = {0};
+                uint8_t status = Amrs_Init_Empty(&html_file, html_buffer_capacity);
+                if (status == AMRS_OK)
+                {
+                    const char *header_mappings[6][2] = {
+                        // header mapping
+                        {"<h1>", "</h1>"},                          // #
+                        {"<h2>", "</h2>"},                          // ##
+                        {"<h3>", "</h3>"},                          // ###
+                        {"<h4>", "</h4>"},                          // ####
+                        {"<h5>", "</h5>"},                          // ####
+                        {"<h6>", "</h6>"},                          // ####
+                    };
+                    uint32_t len_header_mappings = 6;
+
+                    const char *format_mappings[3][2] = {
+                        // format mappings
+                        {"<em>", "</em>"},                          // *
+                        {"<strong>", "</strong>"},                  // **
+                        {"<em><strong>", "</strong></em>"},         // ***
+                    };
+                    uint32_t len_format_mappings = 3;
+
+                    const char *ul_mapping[2] = {"<ul>", "</ul>"};  // -
+                    const char *ol_mapping[2] = {"<ol>", "</ol>"};  // 1.
+                    const char *li_mapping[2] = {"<li>", "</li>"};  // <element specifier for each lits>
+
+                    // open html file tags
+                    Amrs_Append_Str(&html_file, &state.header_tag);
+                    Amrs_Append_Str(&html_file, &state.navbar_component);
+                    Amrs_Append_Str_Raw(&html_file, "<body>");
+                    Amrs_Append_Str_Raw(&html_file, "<article class=\"article-ctn\">");
+
+                    // convert md to html
+                    uint32_t running_index = 0;
+                    while(running_index < html_file.len)
+                    {
+                        // @note: what is the precedence for conversion
+                        // Headings (most important and exclusive)
+                        // - when should tag open
+                        // - when should tag close
+                        // - h6 is the max tag allowed
+                        struct amrs_result_char index = Amrs_Index(html_file, running_index);
+                        if (index.status != AMRS_OK)
+                        {
+                            printf("Error: %d, In converting md file to html\n", index.status);
+                        }
+
+                        if (index.val == '#')
+                        {
+                        }
+
+                        // Multiline Code
+
+                        // Lists
+                        // ordered list
+                        // unordered list
+                        if (index.val == '-')
+                        {
+                        }
+                    }
+
+                    // close html file tags
+                    Amrs_Append_Str_Raw(&html_file, "</article>");
+                    Amrs_Append_Str_Raw(&html_file, "</body>");
+                    Amrs_Append_Str_Raw(&html_file, "</html>");
+
+
+                    // construct destination file path
+                    struct amrs_string output_file_path = {0};
+                    Amrs_Init_Empty(&output_file_path, MAX_PATH_LEN);
+                    Amrs_Copy_Str(&dest_path, &output_file_path);
+                    Amrs_Append_Str_Raw(&output_file_path, file_pointer->d_name);
+
+                    // replace .md with .html (the correct format)
+                    struct amrs_result_u32 md_find = Amrs_Find_Const_Substring_Raw(&output_file_path, ".md", 3);
+                    if (md_find.status != AMRS_OK)
+                    {
+                        printf("Error! failed to find 'md' substring. Exiting\n");
+                        return;
+                    }
+                    if (Amrs_Replace_Const_Str_Raw(&output_file_path, md_find.val, ".html", 5) != AMRS_OK)
+                    {
+                        printf("Error! failed to replace 'md' substring with 'html'. Exiting\n");
+                        return;
+                    }
+
+                    Write_File(output_file_path.buffer, "w",
+                            html_file.buffer, html_file.len);
+
+                    Amrs_Free(&output_file_path);
+                    Amrs_Free(&html_file);
+                }
+                else
+                {
+                    printf("Error! failed to create html file string for conversion.\n");
+                    printf("    status = %d\n", status);
+                    continue;
+                }
+
+                Amrs_Free(&html_file);
+                free(md_file);
+
             }
 
         }
@@ -955,12 +1077,14 @@ int main(int argc, char **argv)
   struct amrs_string navbar_component = {0};
   Amrs_Init_Const_Str_Raw(&navbar_component, 512, NavBarComp, navbar_len);
 
-  GlobalState state = {0};
+  struct global_state state = {0};
   state.src_path = src_path;
   state.dest_path = dest_path;
+  state.navbar_component = navbar_component;
+  state.header_tag = header_tag;
 
   //ReadDirectoryRecursively(src, dest, &state);
-  Process(src_path, dest_path);
+  Process(state, src_path, dest_path);
 
   // cleanup
   Amrs_Free(&navbar_component);
