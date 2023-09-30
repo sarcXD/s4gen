@@ -7,36 +7,23 @@
 #include <unistd.h>
 #include <dirent.h>
 
-#define I8 int8_t
-#define I16 int16_t
-#define I32 int32_t
-#define I64 int64_t
-#define U8 uint8_t
-#define U16 uint16_t
-#define U32 uint32_t
-#define U64 uint64_t
-#define B8 U8
-#define B32 I32
-
 #define B(x) ((x))
 #define KB(x) (1024*(B(x)))
 #define MB(x) (1024*(KB(x)))
 
-#include "utils.c"
 #include "amr_strings.c"
 
-#define H1Index 0
-#define H2Index 1
-#define H3Index 2
-#define H4Index 3
-
 #define MAX_PATH_LEN 256
+
 /*
  * comment keywords ref:
  * @todo: things to do
  * @note: a general note
  * @done: tasks done
  */
+
+// @doing: changing state
+//
 
 // @todo: 
 // maybe make everything more stateful based on the MdConverter, so I dont have to rely on previous ifs or
@@ -46,24 +33,28 @@
 // Memory Arenas and Functions
 // Custom HTML Headers
 // Custom components
-// Table Support
+// - Table
 // Error Logging: 
-//  single, multi-line code, format specifiers not ended properly
+enum ListType {
+	LIST_NONE = 0,
+  LIST_UNORDERED,
+  LIST_ORDERED
+};
 
-typedef struct FileDetails {
-  I32 CurrLine; // Line currently being read
+struct FileDetails {
+  uint32_t CurrLine; // Line currently being read
   char *FilePath; // Path and Name of file open
-} FileDetails;
+};
 
-typedef struct MdConverter {
-  I8 FmtIndex;
-  B8 UlStarted;
-  B8 OlStarted;
-  B8 LiStarted;
-  B8 FmtStarted;
-  B8 ParaStarted;
-  FileDetails File;
-} MdConverter;
+struct List {
+    enum ListType type;
+    uint8_t element_active;
+};
+
+struct MdConverter {
+  struct List list;
+  struct FileDetails file;
+};
 
 struct global_state {
   struct amrs_string src_path;
@@ -76,12 +67,12 @@ struct global_state {
 #define NUM_END 57
 
 // check if a character is a valid number
-B8 IsStrNumber(char *X)
+uint8_t Is_Str_Number(char *X)
 {
   char *iter = X;
   while (*iter != 0)
   {
-    I32 Conv = (I32)*iter;
+    uint32_t Conv = (uint32_t)*iter;
     if (Conv < NUM_START || Conv > NUM_END) // check if this is not within number ascii range
     {
       return 0;
@@ -91,41 +82,16 @@ B8 IsStrNumber(char *X)
   return 1;
 }
 
-B8 IsCharNumber(char X)
+uint8_t Is_Char_Number(char X)
 {
-  B8 valid = X >= NUM_START && X <= NUM_END; // check if this is not within number ascii range
+  uint8_t valid = X >= NUM_START && X <= NUM_END; // check if this is not within number ascii range
   return valid;
 }
 
-B8 IsValidOrderedList(char *X)
+uint8_t Is_Valid_Ordered_List(struct amrs_string md_file, uint32_t running_index)
 {
-  B8 valid = 0;
-  char *LookAhead = X+1; // set look ahead after newline
-  while (*LookAhead != '\n' && *LookAhead != '.')
-  {
-    if (IsCharNumber(*LookAhead))
-    {
-      valid = 1;
-    }
-    else
-    {
-      valid = 0;
-      break;
-    }
-    ++LookAhead;
-  }
-
-  if (valid)
-  {
-      return valid;
-  }
-
-  if (*LookAhead == '.' && *(LookAhead+1) == ' ')
-  {
-    valid = 1;
-  }
-
-  return valid;
+	// @todo: implement this
+  return 0;
 }
 
 #if 0
@@ -741,7 +707,7 @@ void ReadDirectoryRecursively(char *SrcDir, char *DestDir, GlobalState *state)
 void Add_Dir_Slash(struct amrs_string *path)
 {
     // TODO(talha): add error codes here?
-    if (*(path->last_element) != '/') {
+    if (path->buffer[path->len -1] != '/') {
         Amrs_Append_Const_Str_Raw(path, "/", 1);
     }
 }
@@ -799,6 +765,52 @@ uint32_t Write_File(char *file_path, const char *write_attributes,
     uint32_t bytes_written = fwrite(file_contents, 1, file_contents_len, write_fp);
 
     return bytes_written;
+}
+
+struct result_element_checker {
+    uint8_t is_ele;
+    uint32_t running_index;
+};
+
+struct result_element_checker Is_Element_Paragraph(struct amrs_string md_file, uint32_t running_index)
+{
+    struct amrs_result_char c1 = Amrs_Index(md_file, running_index);
+    struct amrs_result_char c2 = Amrs_Index(md_file, running_index+1);
+    if (c1.status != AMRS_OK || c2.status != AMRS_OK)
+    {
+        printf("Error! failed to index md_file in checking if element is paragraph\n");
+        printf("Status Codes: c1: %d    |   c2: %d\n", c1.status, c2.status);
+    }
+
+    struct result_element_checker result = {.is_ele = 0, .running_index = running_index};
+    if (c1.val == '\n' && c2.val == '\n')
+    {
+        result.is_ele = 1;
+        result.running_index = running_index + 1;
+    }
+
+    return result;
+}
+
+struct result_element_checker Is_Element_Line_Break(struct amrs_string md_file, uint32_t running_index)
+{
+
+    struct amrs_result_char c1 = Amrs_Index(md_file, running_index);
+    struct amrs_result_char c2 = Amrs_Index(md_file, running_index+1);
+    if (c1.status != AMRS_OK || c2.status != AMRS_OK)
+    {
+        printf("Error! failed to index md_file in checking if element is line break\n");
+        printf("Status Codes: c1: %d    |   c2: %d\n", c1.status, c2.status);
+    }
+
+    struct result_element_checker result = {.is_ele = 0, .running_index = running_index};
+    if (c1.val == ' ' && c2.val == ' ')
+    {
+        result.is_ele = 1;
+        result.running_index = running_index + 2;
+    }
+
+    return result;
 }
 
 void Process(struct global_state state, struct amrs_string src_path, struct amrs_string dest_path)
@@ -897,17 +909,21 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
             {
                 // read file
                 uint32_t md_file_capacity = MB(64);
-                char *md_file = calloc(1, md_file_capacity);
+                char *md_file_raw = calloc(1, md_file_capacity);
                 uint32_t md_file_size = Read_File(filepath->buffer, "r",
-                        md_file, md_file_capacity);
+                        md_file_raw, md_file_capacity);
 
+                struct amrs_string md_file = {0};
+                Amrs_Init_Str_Raw(&md_file, md_file_capacity, md_file_raw);
+
+                free(md_file_raw);
                 // prepare html buffer
                 uint32_t html_buffer_capacity = MB(128);
                 struct amrs_string html_file = {0};
                 uint8_t status = Amrs_Init_Empty(&html_file, html_buffer_capacity);
                 if (status == AMRS_OK)
                 {
-                    const char *header_mappings[6][2] = {
+                    char *header_mappings_array[6][2] = {
                         // header mapping
                         {"<h1>", "</h1>"},                          // #
                         {"<h2>", "</h2>"},                          // ##
@@ -916,20 +932,22 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                         {"<h5>", "</h5>"},                          // ####
                         {"<h6>", "</h6>"},                          // ####
                     };
-                    uint32_t len_header_mappings = 6;
+                    uint32_t header_mappings_len = 6;
 
-                    const char *format_mappings[3][2] = {
+                    char *format_mappings_array[3][2] = {
                         // format mappings
                         {"<em>", "</em>"},                          // *
                         {"<strong>", "</strong>"},                  // **
                         {"<em><strong>", "</strong></em>"},         // ***
                     };
-                    uint32_t len_format_mappings = 3;
+                    uint32_t format_mappings_len = 3;
 
                     const char *ul_mapping[2] = {"<ul>", "</ul>"};  // -
+                    const char *li_mapping[2] = {"<li>", "</li>"};  // <element specifier for each lists>
                     const char *ol_mapping[2] = {"<ol>", "</ol>"};  // 1.
-                    const char *li_mapping[2] = {"<li>", "</li>"};  // <element specifier for each lits>
 
+                    struct MdConverter converter_state = {0};
+                    
                     // open html file tags
                     Amrs_Append_Str(&html_file, &state.header_tag);
                     Amrs_Append_Str(&html_file, &state.navbar_component);
@@ -938,32 +956,212 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
 
                     // convert md to html
                     uint32_t running_index = 0;
-                    while(running_index < html_file.len)
+                    while(running_index < md_file.len)
                     {
                         // @note: what is the precedence for conversion
                         // Headings (most important and exclusive)
-                        // - when should tag open
-                        // - when should tag close
                         // - h6 is the max tag allowed
-                        struct amrs_result_char index = Amrs_Index(html_file, running_index);
+                        struct amrs_result_char 
+                            index = Amrs_Index(md_file, running_index);
                         if (index.status != AMRS_OK)
                         {
-                            printf("Error: %d, In converting md file to html\n", index.status);
+                            printf("Error! Failed to parse md file to html\n");
+                            return;
                         }
 
-                        if (index.val == '#')
+                        if (index.val == '#') 
                         {
-                        }
+                            // parse_header()
+                            // is_valid_header_format()
+                            uint8_t header_open_is_valid = 0;
+                            uint32_t header_index_max = 0;
+                            for(uint8_t i = 0; i <= header_mappings_len; i++)
+                            {
+                                uint8_t break_loop = 0;
+                                struct amrs_result_char 
+                                    index_header = Amrs_Index(md_file, running_index+i);
+                                if (index_header.status != AMRS_OK)
+                                {
+                                    printf("Error! Failed to index header to check for conversion\n");
+                                    return;
+                                }
 
-                        // Multiline Code
+                                switch (index_header.val)
+                                {
+                                    case '#':
+                                    {
+                                        header_index_max = i;
+                                    } break;
+                                    case ' ':
+                                    {
+                                        header_open_is_valid = 1;
+                                        break_loop = 1;
+                                    } break;
+                                    default:
+                                    {
+                                        break_loop = 1;
+                                    };
+                                }
+
+                                // check if we need to terminate
+                                if (break_loop == 1) {
+                                    break;
+                                }
+                            }
+
+                            uint32_t header_is_valid = 0;
+                            uint32_t copy_start_index = running_index;
+                            struct amrs_result_u32 header_closing_tag = {0};
+                            
+                            // find valid closing tag
+                            if (header_open_is_valid == 1)
+                            {
+                                // we need the index after header_index_max
+                                // header_index_max is to count the number of `#` characters
+                                // as they directly correspond to the header_mapping_array entries
+                                copy_start_index = running_index + header_index_max + 1;
+                                header_closing_tag = Amrs_Find_Char_From(md_file, copy_start_index, '\n');
+                                if (header_closing_tag.status == AMRS_OK)
+                                {
+                                    header_is_valid = 1;
+                                }
+
+                            }
+
+                            if (header_is_valid == 1)
+                            {
+                                // header_is_valid
+                                Amrs_Append_Str_Raw(&html_file, header_mappings_array[header_index_max][0]);
+                                uint32_t copy_end_index = header_closing_tag.val;
+                                uint8_t copy_status = Amrs_Append_Str_In_Range(
+                                        &html_file, md_file, 
+                                        copy_start_index, copy_end_index);
+                                if (copy_status != AMRS_OK)
+                                {
+                                    printf("Error! failed to copy header contents\n");
+                                    return;
+                                }
+                                running_index = copy_end_index + 1;
+
+                                Amrs_Append_Str_Raw(&html_file, header_mappings_array[header_index_max][1]);
+                                Amrs_Append_Const_Str_Raw(&html_file, "\n", 1);
+                                continue;
+                            }
+                            
+                            // @note: reaching here means header was not valid
+                            // in this case, let it propogate as it may need to be formatted differently
+                            // maybe just copied
+                        }
+                        // multiline-code
+                        // image
+                        // custom-component
+                        // ========= END FORMAT SPECIFIERS THAT NEED ENTIRE LINE ========
 
                         // Lists
-                        // ordered list
-                        // unordered list
-                        if (index.val == '-')
                         {
-                        }
+                        	// - Check_list_open()
+	                        // unordered list
+	                        if (index.val == '-' && converter_state.list.element_active != 1)
+	                        {
+	                        	if (converter_state.list.type == LIST_ORDERED) {
+	                        		// close_ordered_list()
+	                        		uint8_t status_ol_close = Amrs_Append_Str_Raw(&html_file, ol_mapping[1]);
+	                        		converter_state.list.type = LIST_NONE;
+	                        	}
 
+	                        	if (converter_state.list.type == LIST_NONE) {
+	                        		// open_unordered_list()
+	                        		uint8_t status_ul_open = Amrs_Append_Str_Raw(&html_file, ul_mapping[0]);
+	                        		converter_state.list.type = LIST_UNORDERED;
+	                        	}
+
+	                        	// parse_unordered_list()
+                            struct amrs_result_char index_ul = Amrs_Index(&html_file, running_index+1);
+                            if (index_ul.val == ' ')
+                            {
+                            	// next element should be a space for valid list element
+                            	// add list element tag
+                            	uint8_t status_li_open = Amrs_Append_Str_Raw(&html_file, li_mapping[0]);
+                            	// mark list element as active
+                            	converter_state.list.element_active = 1;
+                            }
+	                        }
+
+	                        // ordered list
+	                        if (Is_Valid_Ordered_List(md_file, running_index) == 1 && converter_state.list.element_active != 1)
+	                        {
+	                        	if (converter_state.list.type == LIST_UNORDERED) {
+	                        		// close_unordered_list()
+	                        		uint8_t status_ul_close = Amrs_Append_Str_Raw(&html_file, ul_mapping[1]);
+	                        		converter_state.list.type = LIST_NONE;
+	                        	}
+
+	                        	if (converter_state.list.type == LIST_NONE) {
+	                        		// open_ordered_list()
+	                        		uint8_t status_ol_open = Amrs_Append_Str_Raw(&html_file, ol_mapping[0]);
+	                        		converter_state.list.type = LIST_ORDERED;
+	                        	}
+
+                            // parse_ordered_list()
+                            struct amrs_result_char index_ul = Amrs_Index(md_file, running_index+1);
+                            if (index_ul.val == ' ')
+                            {
+                                // next element should be a space for valid list element
+                                // add list element tag
+                            		uint8_t status_li_open = Amrs_Append_Str_Raw(&html_file, li_mapping[0]);
+                            		// mark list element as active
+                                converter_state.list.element_active = 1;
+                            }
+                          }
+
+                          // - check_list_close()
+                          if (converter_state.list.element_active == 1)
+                          {
+                            // check if list element ending
+                            struct result_element_checker li_ending = Is_Element_Line_Break(md_file, running_index);
+                            if (li_ending.is_ele)
+                            {
+                              // close_list_element()
+                            	uint8_t status_li_close = Amrs_Append_Str_Raw(&html_file, li_mapping[1]);	
+                            	converter_state.list.element_active = 0;
+                            }
+                          }
+                          
+                          if (converter_state.list.type != LIST_NONE)
+                          {
+                            struct result_element_checker list_ending = Is_Element_Paragraph(md_file, running_index);
+                            if (list_ending.is_ele)
+                            {
+                          		if (converter_state.list.element_active == 1)
+                          		{
+                          			// close_list_element()
+                          			uint8_t status_li_close = Amrs_Append_Str_Raw(&html_file, li_mapping[1]);	
+                            		converter_state.list.element_active = 0;
+                          		}  	
+                              if (converter_state.list.type == LIST_ORDERED)
+                              {
+                              	// close_ordered_list()
+		                        		uint8_t status_ol_close = Amrs_Append_Str_Raw(&html_file, ol_mapping[1]);
+		                        		converter_state.list.type = LIST_NONE;
+                              }
+                              else if (converter_state.list.type == LIST_UNORDERED)
+                              {
+                              	// close_unordered_list()
+                              	uint8_t status_ul_close = Amrs_Append_Str_Raw(&html_file, ul_mapping[1]);
+		                        		converter_state.list.type = LIST_NONE;
+                              }
+                            }
+                          }
+	                      }
+
+                        // links/urls
+                        // format specifiers
+                        // linebreaks
+                        // single line code
+                        // paragraph (\n\n)
+                        {
+                            // normal text
+                        };
                         running_index++;
                     }
 
@@ -1006,7 +1204,7 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                 }
 
                 Amrs_Free(&html_file);
-                free(md_file);
+                Amrs_Free(&md_file);
 
             }
 
@@ -1015,6 +1213,23 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
         Amrs_Free(&subpath);
     } while (file_pointer != NULL);
     closedir(dir_pointer);
+}
+
+uint8_t Str_Equal_Const_Str(char *a, const char *b, uint32_t len_b)
+{
+    uint32_t len_a = strlen(a);
+    if (len_a != len_b) {
+        return 0;
+    }
+    uint8_t is_equal = 0;
+    for (uint32_t i=0; i<len_b; i++)
+    {
+        if (a[i] != b[i]) {
+            return 0;
+        }
+    }
+
+    return 1;
 }
 
 int main(int argc, char **argv)
@@ -1027,7 +1242,7 @@ int main(int argc, char **argv)
 
   while (*++argv != 0) 
   {
-      if (QStrEqual(*argv, "--src")) 
+      if (Str_Equal_Const_Str(*argv, "--src", 5)) 
       {
           uint8_t status = Amrs_Append_Str_Raw(&src_path, *++argv);
           if (status != AMRS_OK) {
@@ -1037,7 +1252,7 @@ int main(int argc, char **argv)
           Add_Dir_Slash(&src_path);
           printf("Src path is %s\n", src_path.buffer);
       }
-      else if (QStrEqual(*argv, "--dest"))
+      else if (Str_Equal_Const_Str(*argv, "--dest", 6))
       {
           uint8_t status = Amrs_Append_Str_Raw(&dest_path, *++argv);
           if (status != AMRS_OK) {

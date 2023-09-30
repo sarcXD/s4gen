@@ -1,5 +1,3 @@
-#include "amr_strings.h"
-
 uint8_t Amrs_Is_Allocated(struct amrs_string str)
 {
     if (str.is_allocated == 1)
@@ -24,7 +22,6 @@ uint8_t Amrs_Init_Empty(struct amrs_string *str, uint32_t capacity)
     str->len = 0;
     str->capacity = capacity;
     str->buffer = (char *)calloc(str->capacity, sizeof(str->buffer));
-    str->last_element = str->buffer;
     str->is_allocated = 1;
 
     return AMRS_OK;
@@ -39,7 +36,6 @@ uint8_t Amrs_Init_Empty_Pass_Buffer(struct amrs_string *str, char *buffer, uint3
     if (capacity ==  0) return AMRS_INVALID_CAPACITY_LENGTH;
 
     // @todo: implement this
-
     return AMRS_OK;
 }
 
@@ -102,6 +98,29 @@ struct amrs_result_char Amrs_Index(struct amrs_string str, uint32_t index)
     return res;
 }
 
+struct amrs_result_u32 Amrs_Find_Char_From(struct amrs_string str, uint32_t start_index, char to_find)
+{
+    struct amrs_result_u32 result = {0};
+    if (Amrs_Is_Allocated(str) == AMRS_ALLOCATED_FALSE)
+    {
+        result.status = AMRS_ALLOCATED_FALSE;
+        return result;
+    }
+
+    for (uint32_t i = start_index; i < str.len; i++)
+    {
+        if (str.buffer[i] == to_find)
+        {
+            result.status = AMRS_OK;
+            result.val = i;
+            return result;
+        }
+    }
+
+    result.status = AMRS_NO_MATCH_FOUND;
+    return result;
+}
+
 uint8_t Amrs_Append_Const_Str_Raw(struct amrs_string *str, const char *to_append, uint32_t to_append_len)
 {
     if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_FALSE)
@@ -115,7 +134,6 @@ uint8_t Amrs_Append_Const_Str_Raw(struct amrs_string *str, const char *to_append
     
     memcpy(&(str->buffer[str->len]), to_append, to_append_len);
     str->len = str->len + to_append_len;
-    str->last_element = &str->buffer[str->len - 1];
 
     return AMRS_OK;
 };
@@ -135,9 +153,6 @@ uint8_t Amrs_Append_Str_Raw(struct amrs_string *str, char *to_append)
     memcpy(&(str->buffer[str->len]), to_append, to_append_len);
     str->len = str->len + to_append_len;
 
-    // @note: this last element seems mostly useless
-    str->last_element = &str->buffer[str->len - 1];
-
     return AMRS_OK;
 };
 
@@ -156,7 +171,6 @@ uint8_t Amrs_Append_Str(struct amrs_string *str, struct amrs_string *to_append)
     
     memcpy(&(str->buffer[str->len]), to_append->buffer, to_append->len);
     str->len = str->len + to_append->len;
-    str->last_element = &str->buffer[str->len - 1];
 
     return AMRS_OK;
 }
@@ -178,13 +192,44 @@ uint8_t Amrs_Copy_Str(struct amrs_string *copy_from, struct amrs_string *copy_to
     
     memcpy(copy_to->buffer, copy_from->buffer, copy_from->len);
     copy_to->len = copy_from->len;
-    copy_to->last_element = &copy_to->buffer[copy_to->len - 1];
 
     return AMRS_OK;
 }
 
-struct amrs_result_u32 
-Amrs_Find_Const_Substring_Raw(struct amrs_string *str, const char *raw_substr, uint32_t raw_substr_len)
+uint8_t Amrs_Append_Str_In_Range(
+        struct amrs_string *str, struct amrs_string to_append,
+        uint32_t start_index, uint32_t end_index)
+{
+    if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_FALSE) {
+        return AMRS_ALLOCATED_FALSE;
+    }
+    if (Amrs_Is_Allocated(to_append) == AMRS_ALLOCATED_FALSE) {
+        return AMRS_ALLOCATED_FALSE;
+    }
+    // check if index range is valid
+    if (start_index >= end_index) {
+        return AMRS_INVALID_INDEX_RANGE;
+    }
+    // check if indexes fall outside of to_append
+    if (to_append.len < start_index || to_append.len < end_index) {
+        return AMRS_INVALID_INDEX;
+    }
+    // check if str has insufficient capacity
+    uint32_t available_capacity = to_append.capacity - to_append.len;
+    uint32_t to_append_len = end_index - start_index;
+    if (available_capacity < to_append_len) {
+        return AMRS_INSUFFICIENT_SPACE;
+    }
+
+    memcpy(&(str->buffer[str->len]), &(to_append.buffer[start_index]), to_append_len);
+    str->len = str->len + to_append_len;
+
+    return AMRS_OK;
+}
+
+struct amrs_result_u32 Amrs_Find_Const_Substring_Raw(
+    struct amrs_string *str, 
+    const char *raw_substr, uint32_t raw_substr_len)
 {
     struct amrs_result_u32 result = {0};
     if (Amrs_Is_Allocated(*str) == AMRS_ALLOCATED_FALSE)
@@ -273,7 +318,6 @@ uint8_t Amrs_Replace_Const_Str_Raw(struct amrs_string *str, uint32_t replace_at,
 
     memcpy(&str->buffer[replace_at], replace_with, replace_with_len);
     str->len = str->len + str_replace_with_len_increment;
-    str->last_element = &(str->buffer[str->len - 1]);
 
     return AMRS_OK;
 }

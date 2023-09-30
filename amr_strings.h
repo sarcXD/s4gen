@@ -17,6 +17,7 @@
 #define AMRS_NO_MATCH_FOUND 8
 #define AMRS_INVALID_REPLACEMENT_INDEX 9
 #define AMRS_INVALID_INDEX 10
+#define AMRS_INVALID_INDEX_RANGE 11
 
 // @note: 
 // Relatively safe string library. Built for learning and performance (not great right now)
@@ -69,7 +70,18 @@ uint8_t Amrs_Init_Const_Str_Raw(struct amrs_string *str, uint32_t capacity, cons
 // total capacity of the string to allow any operations
 uint8_t Amrs_Init_Str_Raw(struct amrs_string *str, uint32_t capacity, char *raw_str);
 
+// Safe way to index the string
+// adds length and allocation checks
+// other than that, is a simple index after this
+// more so a convenience function to bypass having to check before access
 struct amrs_result_char Amrs_Index(struct amrs_string str, uint32_t index);
+
+// Find a character `to_find` starting at `start_index`
+struct amrs_result_u32 
+Amrs_Find_Char_From(
+        struct amrs_string str, 
+        uint32_t start_index,
+        char to_find);
 
 // append and copy operations use memcpy on the buffer
 // though the operation is trivial and can be done with a loop
@@ -89,6 +101,13 @@ uint8_t Amrs_Append_Str_Raw(struct amrs_string *str, char *raw_str);
 // it is relatively safe
 uint8_t Amrs_Append_Str(struct amrs_string *str, struct amrs_string *to_append);
 uint8_t Amrs_Copy_Str(struct amrs_string *copy_from, struct amrs_string *copy_to);
+
+// @note: append `to_append` to `str` in the range
+// `start_index` - `end_index`
+uint8_t Amrs_Append_Str_In_Range(
+        struct amrs_string *str, struct amrs_string to_append,
+        uint32_t start_index, uint32_t end_index);
+
 
 // finds in str the given raw_substr 
 // returns an amrs_result
