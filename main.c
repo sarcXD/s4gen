@@ -22,12 +22,10 @@
  * @done: tasks done
  */
 
-// @doing: changing state
-//
+// @doing: changing converter. hit some basic limitations
 
 // @todo: 
-// maybe make everything more stateful based on the MdConverter, so I dont have to rely on previous ifs or
-// changes that happened in a previous loop to understand what to do, huge pain
+// fix list endings
 // fix random paragraph tags on newlines
 // Images
 // Memory Arenas and Functions
@@ -63,24 +61,13 @@ struct global_state {
   struct amrs_string navbar_component;
 };
 
+struct result_element_checker {
+    uint8_t is_ele;
+    uint32_t running_index;
+};
+
 #define NUM_START 48
 #define NUM_END 57
-
-// check if a character is a valid number
-uint8_t Is_Str_Number(char *X)
-{
-  char *iter = X;
-  while (*iter != 0)
-  {
-    uint32_t Conv = (uint32_t)*iter;
-    if (Conv < NUM_START || Conv > NUM_END) // check if this is not within number ascii range
-    {
-      return 0;
-    }
-    ++iter;
-  }
-  return 1;
-}
 
 uint8_t Is_Char_Number(char X)
 {
@@ -88,10 +75,54 @@ uint8_t Is_Char_Number(char X)
   return valid;
 }
 
-uint8_t Is_Valid_Ordered_List(struct amrs_string md_file, uint32_t running_index)
+struct result_element_checker Is_Valid_Ordered_List(struct amrs_string md_file, uint32_t running_index)
 {
-	// @todo: implement this
-  return 0;
+  /*
+  1.<space> 
+  2.<space>
+  11.<space>
+  */
+  struct result_element_checker result = {0};
+  uint8_t has_num = 0;
+  uint8_t is_ele = 0;
+  uint32_t local_running = running_index;
+
+  for(;;)
+  {
+    struct amrs_result_char index = Amrs_Index(md_file, local_running);
+    if (Is_Char_Number(index.val) == 1)
+    {
+      has_num = 1;
+    }
+    else if (has_num == 1)
+    {
+      // number part verified
+      // should now be a dot char
+      if (index.val == '.')
+      {
+        local_running += 1;
+        index = Amrs_Index(md_file, local_running);
+        if (index.val == ' ')
+        {
+          is_ele = 1;
+          local_running += 1;
+        }
+      }
+      break;
+    }
+    else
+    {
+      break;
+    }
+    local_running += 1;
+  }
+
+  result.is_ele = is_ele;
+  if (result.is_ele == 1)
+  {
+    result.running_index = local_running;
+  }
+  return result;
 }
 
 #if 0
@@ -767,19 +798,15 @@ uint32_t Write_File(char *file_path, const char *write_attributes,
     return bytes_written;
 }
 
-struct result_element_checker {
-    uint8_t is_ele;
-    uint32_t running_index;
-};
-
 struct result_element_checker Is_Element_Paragraph(struct amrs_string md_file, uint32_t running_index)
 {
     struct amrs_result_char c1 = Amrs_Index(md_file, running_index);
     struct amrs_result_char c2 = Amrs_Index(md_file, running_index+1);
     if (c1.status != AMRS_OK || c2.status != AMRS_OK)
     {
-        printf("Error! failed to index md_file in checking if element is paragraph\n");
+        printf("Error! failed to index md_file\n");
         printf("Status Codes: c1: %d    |   c2: %d\n", c1.status, c2.status);
+        printf("Line no: %d\n", __LINE__);
     }
 
     struct result_element_checker result = {.is_ele = 0, .running_index = running_index};
@@ -801,6 +828,7 @@ struct result_element_checker Is_Element_Line_Break(struct amrs_string md_file, 
     {
         printf("Error! failed to index md_file in checking if element is line break\n");
         printf("Status Codes: c1: %d    |   c2: %d\n", c1.status, c2.status);
+        printf("Line no: %d\n", __LINE__);
     }
 
     struct result_element_checker result = {.is_ele = 0, .running_index = running_index};
@@ -824,6 +852,7 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
     if (dir_pointer == NULL)
     {
         printf("Error! failed to open directory\n");
+        printf("Line no: %d\n", __LINE__);
         return;
     }
     
@@ -942,9 +971,9 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                     };
                     uint32_t format_mappings_len = 3;
 
-                    const char *ul_mapping[2] = {"<ul>", "</ul>"};  // -
-                    const char *li_mapping[2] = {"<li>", "</li>"};  // <element specifier for each lists>
-                    const char *ol_mapping[2] = {"<ol>", "</ol>"};  // 1.
+                    char *ul_mapping[2] = {"<ul>", "</ul>"};        // -
+                    char *li_mapping[2] = {"<li>", "</li>"};        // <element specifier for each lists>
+                    char *ol_mapping[2] = {"<ol>", "</ol>"};        // 1.
 
                     struct MdConverter converter_state = {0};
                     
@@ -966,9 +995,11 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                         if (index.status != AMRS_OK)
                         {
                             printf("Error! Failed to parse md file to html\n");
+                            printf("Line no: %d\n", __LINE__);
                             return;
                         }
 
+                        // @note: heading
                         if (index.val == '#') 
                         {
                             // parse_header()
@@ -983,6 +1014,7 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                                 if (index_header.status != AMRS_OK)
                                 {
                                     printf("Error! Failed to index header to check for conversion\n");
+                                    printf("Line no: %d\n", __LINE__);
                                     return;
                                 }
 
@@ -1025,7 +1057,15 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                                 {
                                     header_is_valid = 1;
                                 }
-
+                                else
+                                {
+                                  // find if file is ending on this line
+                                  header_closing_tag = Amrs_Find_Char_From(md_file, copy_start_index, 0);
+                                  if (header_closing_tag.status == AMRS_OK)
+                                  {
+                                    header_is_valid = 1;
+                                  }
+                                }
                             }
 
                             if (header_is_valid == 1)
@@ -1039,6 +1079,7 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                                 if (copy_status != AMRS_OK)
                                 {
                                     printf("Error! failed to copy header contents\n");
+                                    printf("Line no: %d\n", __LINE__);
                                     return;
                                 }
                                 running_index = copy_end_index + 1;
@@ -1056,18 +1097,24 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                         // image
                         // custom-component
                         // ========= END FORMAT SPECIFIERS THAT NEED ENTIRE LINE ========
-
-                        // Lists
+                        // @note: Lists
+                        uint8_t is_file_ending = (running_index + 1) == md_file.len;
                         {
-                        	// - Check_list_open()
-	                        // unordered list
-	                        if (index.val == '-' && converter_state.list.element_active != 1)
-	                        {
-	                        	if (converter_state.list.type == LIST_ORDERED) {
-	                        		// close_ordered_list()
-	                        		uint8_t status_ol_close = Amrs_Append_Str_Raw(&html_file, ol_mapping[1]);
-	                        		converter_state.list.type = LIST_NONE;
-	                        	}
+                          // - Check_list_open()
+                          // unordered list
+                          // next element should be a space for valid list element
+                          struct amrs_result_char index_ul = Amrs_Index(md_file, running_index+1);
+                          uint8_t is_unordered_list = index.val == '-' && index_ul.val == ' ';
+                          uint32_t running_index_new = running_index + 2;
+                          if (is_unordered_list && converter_state.list.element_active != 1)
+                          {
+                            // update running index
+                            running_index = running_index_new;
+                            if (converter_state.list.type == LIST_ORDERED) {
+                              // close_ordered_list()
+                              uint8_t status_ol_close = Amrs_Append_Str_Raw(&html_file, ol_mapping[1]);
+                              converter_state.list.type = LIST_NONE;
+                            }
 
 	                        	if (converter_state.list.type == LIST_NONE) {
 	                        		// open_unordered_list()
@@ -1075,21 +1122,18 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
 	                        		converter_state.list.type = LIST_UNORDERED;
 	                        	}
 
-	                        	// parse_unordered_list()
-                            struct amrs_result_char index_ul = Amrs_Index(&html_file, running_index+1);
-                            if (index_ul.val == ' ')
-                            {
-                            	// next element should be a space for valid list element
-                            	// add list element tag
-                            	uint8_t status_li_open = Amrs_Append_Str_Raw(&html_file, li_mapping[0]);
-                            	// mark list element as active
-                            	converter_state.list.element_active = 1;
-                            }
-	                        }
+                            // parse_unordered_list()
+                            // add list element tag
+                            uint8_t status_li_open = Amrs_Append_Str_Raw(&html_file, li_mapping[0]);
+                            // mark list element as active
+                            converter_state.list.element_active = 1;
+                          }
 
 	                        // ordered list
-	                        if (Is_Valid_Ordered_List(md_file, running_index) == 1 && converter_state.list.element_active != 1)
+                          struct result_element_checker result_ol = Is_Valid_Ordered_List(md_file, running_index);
+	                        if (result_ol.is_ele == 1 && converter_state.list.element_active != 1)
 	                        {
+                            running_index = result_ol.running_index;
 	                        	if (converter_state.list.type == LIST_UNORDERED) {
 	                        		// close_unordered_list()
 	                        		uint8_t status_ul_close = Amrs_Append_Str_Raw(&html_file, ul_mapping[1]);
@@ -1104,14 +1148,10 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
 
                             // parse_ordered_list()
                             struct amrs_result_char index_ul = Amrs_Index(md_file, running_index+1);
-                            if (index_ul.val == ' ')
-                            {
-                                // next element should be a space for valid list element
-                                // add list element tag
-                            		uint8_t status_li_open = Amrs_Append_Str_Raw(&html_file, li_mapping[0]);
-                            		// mark list element as active
-                                converter_state.list.element_active = 1;
-                            }
+                            // add list element tag
+                            uint8_t status_li_open = Amrs_Append_Str_Raw(&html_file, li_mapping[0]);
+                            // mark list element as active
+                            converter_state.list.element_active = 1;
                           }
 
                           // - check_list_close()
@@ -1119,37 +1159,43 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                           {
                             // check if list element ending
                             struct result_element_checker li_ending = Is_Element_Line_Break(md_file, running_index);
-                            if (li_ending.is_ele)
+                            if (li_ending.is_ele == 1)
                             {
                               // close_list_element()
                             	uint8_t status_li_close = Amrs_Append_Str_Raw(&html_file, li_mapping[1]);	
                             	converter_state.list.element_active = 0;
+
+                            	// update running index
+                              running_index = li_ending.running_index;
                             }
                           }
                           
                           if (converter_state.list.type != LIST_NONE)
                           {
-                            struct result_element_checker list_ending = Is_Element_Paragraph(md_file, running_index);
-                            if (list_ending.is_ele)
-                            {
-                          		if (converter_state.list.element_active == 1)
-                          		{
-                          			// close_list_element()
-                          			uint8_t status_li_close = Amrs_Append_Str_Raw(&html_file, li_mapping[1]);	
-                            		converter_state.list.element_active = 0;
-                          		}  	
-                              if (converter_state.list.type == LIST_ORDERED)
+                              struct result_element_checker list_ending = Is_Element_Paragraph(md_file, running_index);
+                              if (list_ending.is_ele == 1 || is_file_ending == 1)
                               {
-                              	// close_ordered_list()
-		                        		uint8_t status_ol_close = Amrs_Append_Str_Raw(&html_file, ol_mapping[1]);
-		                        		converter_state.list.type = LIST_NONE;
-                              }
-                              else if (converter_state.list.type == LIST_UNORDERED)
-                              {
-                              	// close_unordered_list()
-                              	uint8_t status_ul_close = Amrs_Append_Str_Raw(&html_file, ul_mapping[1]);
-		                        		converter_state.list.type = LIST_NONE;
-                              }
+                                  if (converter_state.list.element_active == 1)
+                                  {
+                                      // close_list_element()
+                                      uint8_t status_li_close = Amrs_Append_Str_Raw(&html_file, li_mapping[1]);	
+                                      converter_state.list.element_active = 0;
+                                  }  	
+                                  if (converter_state.list.type == LIST_ORDERED)
+                                  {
+                                      // close_ordered_list()
+                                      uint8_t status_ol_close = Amrs_Append_Str_Raw(&html_file, ol_mapping[1]);
+                                      converter_state.list.type = LIST_NONE;
+                                  }
+                                  else if (converter_state.list.type == LIST_UNORDERED)
+                                  {
+                                      // close_unordered_list()
+                                      uint8_t status_ul_close = Amrs_Append_Str_Raw(&html_file, ul_mapping[1]);
+                                      converter_state.list.type = LIST_NONE;
+                                  }
+
+                              // update running index
+                              running_index = list_ending.running_index;
                             }
                           }
 	                      }
@@ -1161,8 +1207,9 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                         // paragraph (\n\n)
                         {
                             // normal text
+                            uint8_t status_char_append = Amrs_Append_Str_Raw(&html_file, &index.val);
                         };
-                        running_index++;
+                        running_index += 1;
                     }
 
                     // close html file tags
@@ -1182,11 +1229,13 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                     if (md_find.status != AMRS_OK)
                     {
                         printf("Error! failed to find 'md' substring. Exiting\n");
+                        printf("Line no: %d\n", __LINE__);
                         return;
                     }
                     if (Amrs_Replace_Const_Str_Raw(&output_file_path, md_find.val, ".html", 5) != AMRS_OK)
                     {
                         printf("Error! failed to replace 'md' substring with 'html'. Exiting\n");
+                        printf("Line no: %d\n", __LINE__);
                         return;
                     }
 
@@ -1200,6 +1249,7 @@ void Process(struct global_state state, struct amrs_string src_path, struct amrs
                 {
                     printf("Error! failed to create html file string for conversion.\n");
                     printf("    status = %d\n", status);
+                    printf("Line no: %d\n", __LINE__);
                     continue;
                 }
 
